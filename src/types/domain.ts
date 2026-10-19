@@ -132,7 +132,10 @@ export interface PriceSnapshot {
 
 export interface BookingHold {
   id: string;
-  customer_id: string;
+  customer_id: string | null;
+  guest_email?: string | null;
+  guest_name?: string | null;
+  guest_phone?: string | null;
   facility_id: string;
   service_id: string;
   vehicle_id: string | null;
@@ -146,6 +149,32 @@ export interface BookingHold {
   price_snapshot: PriceSnapshot;
   created_at: string;
   updated_at: string;
+}
+
+export interface CreateHoldParams {
+  facility_id: string;
+  service_id: string;
+  entry_at: string;
+  exit_at: string;
+  vehicle_id?: string | null;
+  customer_id?: string | null;
+  guest_email?: string | null;
+  guest_name?: string | null;
+  guest_phone?: string | null;
+}
+
+export interface HoldResult {
+  hold_id: string;
+  facility_id: string;
+  service_id: string;
+  entry_at: string;
+  exit_at: string;
+  status: HoldStatus;
+  expires_at: string;
+  price_amount: number;
+  currency: string;
+  pricing_unit: PricingUnit;
+  units: number;
 }
 
 export interface Booking {

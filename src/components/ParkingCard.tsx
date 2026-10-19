@@ -12,7 +12,6 @@ import {
   CarFront,
   Bus,
   ShieldCheck,
-  Star,
   Zap,
   Sparkles,
   Check,
@@ -48,16 +47,16 @@ export function ParkingCard({
 
   let units = 1;
   let totalAmount = primaryService ? primaryService.price_amount : 0;
-  let calculationError = false;
 
   if (primaryService) {
     try {
       units = computeBillableUnits(primaryService.pricing_unit, entryAt, exitAt);
       totalAmount = computeTotalAmount(primaryService.price_amount, units);
     } catch {
-      calculationError = true;
+      // Fallback calculation handled gracefully
     }
   }
+
 
   const isValet = facility.name.toLowerCase().includes("valet") ||
     primaryService?.name.toLowerCase().includes("valet");

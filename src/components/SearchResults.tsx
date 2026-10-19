@@ -8,14 +8,17 @@ import { ComparisonBar } from "./ComparisonBar";
 import { ComparisonModal } from "./ComparisonModal";
 import { ParkingDetailModal } from "./ParkingDetailModal";
 import { FaqSection } from "./FaqSection";
+import { createBookingHoldAction } from "@/server/bookingHolds";
+import { formatMoney } from "@/lib/pricing";
+
 import {
   SlidersHorizontal,
   CarFront,
   Bus,
   RotateCcw,
   AlertCircle,
-  ArrowRight,
 } from "./icons";
+
 
 interface SearchResultsProps {
   facilities: FacilityWithServices[];
@@ -96,10 +99,45 @@ export function SearchResults({
     });
   };
 
-  const handleSelectFacility = (facility: FacilityWithServices) => {
-    setBookingNotice(
-      `Has seleccionado "${facility.name}". La creación de hold atómico y el checkout seguro con Stripe se activan en el Incremento 2.`
-    );
+  const [isHolding, setIsHolding] = useState(false);
+
+  const handleSelectFacility = async (facility: FacilityWithServices) => {
+    const srv = facility.services[0];
+    if (!srv) {
+      setBookingNotice(`La instalación ${facility.name} no cuenta con servicios activos.`);
+      return;
+    }
+
+    setIsHolding(true);
+    setBookingNotice("Solicitando asignación de plaza y bloqueo de capacidad en el servidor...");
+
+    try {
+      const res = await createBookingHoldAction({
+        facility_id: facility.id,
+        service_id: srv.id,
+        entry_at: entryAt,
+        exit_at: exitAt,
+        guest_name: "Cliente Invitado",
+        guest_email: "cliente.invitado@aerovalet.demo",
+      });
+
+      if (res.success && res.hold) {
+        const formatted = formatMoney(res.hold.price_amount, res.hold.currency);
+        const exp = new Date(res.hold.expires_at).toLocaleTimeString("es-ES", {
+          hour: "2-digit",
+          minute: "2-digit",
+        });
+        setBookingNotice(
+          `${res.isDemo ? "🧪 [Simulación Demo] " : "🔒 "}Plaza bloqueada temporalmente en servidor para "${facility.name}". Hold: ${res.hold.hold_id.slice(0, 18)}... (vigente hasta las ${exp}). Tarifa calculada: ${formatted} (${res.hold.units} ${res.hold.units === 1 ? "unidad" : "unidades"}). Pasarela de pago en integración para el próximo incremento.`
+        );
+      } else {
+        setBookingNotice(`No se pudo reservar la plaza: ${res.error || "Capacidad no disponible"}`);
+      }
+    } catch {
+      setBookingNotice("Error al comunicar con el servidor para la reserva temporal.");
+    } finally {
+      setIsHolding(false);
+    }
   };
 
   const entryDate = new Date(entryAt);
@@ -162,8 +200,17 @@ export function SearchResults({
 
       {/* Main content container */}
       <div className="results-container main-content-wrapper">
+        {/* Loading hold indicator */}
+        {isHolding && (
+          <div className="booking-notice-banner" role="status">
+            <div className="notice-content">
+              <strong>⏳ Conectando con servidor:</strong> Verificando aforo en PostgreSQL y reservando plaza temporal...
+            </div>
+          </div>
+        )}
+
         {/* Booking hold notification banner */}
-        {bookingNotice && (
+        {bookingNotice && !isHolding && (
           <div className="booking-notice-banner" role="status">
             <div className="notice-content">
               <strong>🎉 Paso de selección completado:</strong> {bookingNotice}
@@ -178,6 +225,7 @@ export function SearchResults({
             </button>
           </div>
         )}
+
 
         {/* Demo Mode Notice */}
         {isDemoMode && (

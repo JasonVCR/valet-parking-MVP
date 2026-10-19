@@ -12,15 +12,12 @@ import {
   X,
   Check,
   ShieldCheck,
-  Star,
-  Zap,
-  Sparkles,
   ArrowRight,
   CarFront,
   Bus,
   Trash2,
-  Info,
 } from "./icons";
+
 
 interface ComparisonModalProps {
   facilities: FacilityWithServices[];

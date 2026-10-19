@@ -13,7 +13,6 @@ import {
   Sparkles,
   Plane,
   ShieldCheck,
-  Star,
 } from "./icons";
 
 interface HeroSearchProps {
@@ -42,7 +41,8 @@ function defaultExitAt(entryValue: string): string {
   return toDatetimeLocalValue(d);
 }
 
-export function HeroSearch({ airports, isDemoMode = false }: HeroSearchProps) {
+export function HeroSearch({ airports }: HeroSearchProps) {
+
   const formId = useId();
   const router = useRouter();
 
