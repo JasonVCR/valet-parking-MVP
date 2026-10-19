@@ -29,9 +29,9 @@ export default async function HomePage() {
                 <Sparkles size={13} />
                 Estándar de Confianza
               </span>
-              <h2 className="features-title">Por qué reservar en AeroValet</h2>
+              <h2 className="features-title">Por qué buscar en AeroValet</h2>
               <p className="features-sub">
-                Garantizamos una experiencia de aparcamiento sin sorpresas, con contratos auditados y custodia profesional.
+                Compara opciones de aparcamiento y valet en aeropuertos con transparencia de precios y operadores registrados.
               </p>
             </div>
 
@@ -40,9 +40,9 @@ export default async function HomePage() {
                 <div className="feature-icon-wrapper icon-blue">
                   <CarFront size={24} />
                 </div>
-                <h3>Servicio Valet VIP en Terminal</h3>
+                <h3>Servicio Valet y Lanzadera</h3>
                 <p>
-                  Entrega y recoge tu coche directamente frente a las puertas de Salidas y Llegadas. Sin traslados, sin esperas ni pérdidas de tiempo.
+                  Elige entre entrega directa en la terminal de salidas o aparcamiento en instalaciones cercanas con transporte lanzadera.
                 </p>
               </div>
 
@@ -50,9 +50,9 @@ export default async function HomePage() {
                 <div className="feature-icon-wrapper icon-emerald">
                   <ShieldCheck size={24} />
                 </div>
-                <h3>Bloqueo Atómico de Capacidad</h3>
+                <h3>Control de Capacidad en Servidor</h3>
                 <p>
-                  Tu plaza queda asegurada en la base de datos al iniciar el proceso con hold transaccional. Cero riesgo de sobreventa.
+                  Comprobación de aforo en la base de datos con asignación temporal durante el proceso de reserva.
                 </p>
               </div>
 
@@ -60,9 +60,9 @@ export default async function HomePage() {
                 <div className="feature-icon-wrapper icon-indigo">
                   <CreditCard size={24} />
                 </div>
-                <h3>Pago Transparente vía Stripe</h3>
+                <h3>Cálculo de Precios en Servidor</h3>
                 <p>
-                  Transacciones directas con proveedores oficiales mediante Stripe Connect. Precios calculados en servidor en céntimos enteros.
+                  Tarifas calculadas de forma exacta en céntimos enteros en el servidor para evitar discrepancias.
                 </p>
               </div>
 
@@ -70,9 +70,9 @@ export default async function HomePage() {
                 <div className="feature-icon-wrapper icon-amber">
                   <Sparkles size={24} />
                 </div>
-                <h3>Cancelación Flexible Gratuita</h3>
+                <h3>Condiciones Claras de Cancelación</h3>
                 <p>
-                  Reembolso del 100% garantizado cancelando hasta 24 horas antes del inicio de tu estancia sin justificaciones ni cargos ocultos.
+                  Información transparente sobre las políticas de cancelación y reembolso según la tarifa del operador contratado.
                 </p>
               </div>
             </div>
@@ -92,12 +92,12 @@ export default async function HomePage() {
             <div>
               <p className="footer-brand">AeroValet & Parking Hub</p>
               <p className="footer-subtext">
-                Marketplace verificable de aparcamiento en aeropuertos · Next.js + TypeScript + Supabase + Stripe Connect
+                Marketplace verificable de aparcamiento en aeropuertos · Next.js + TypeScript + Supabase
               </p>
             </div>
             <div className="footer-pills">
               <span className="pill-badge pill-slate">MVP Verificable</span>
-              <span className="pill-badge pill-slate">RLS & Hold Atómico</span>
+              <span className="pill-badge pill-slate">RLS & Servidor Seguro</span>
             </div>
           </div>
           <div className="footer-bottom-row">

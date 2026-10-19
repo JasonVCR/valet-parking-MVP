@@ -184,9 +184,9 @@ export function ParkingDetailModal({
             <div className="guarantee-card">
               <ShieldCheck size={20} className="guarantee-icon" />
               <div>
-                <h5>Capacidad y Bloqueo Atómico</h5>
+                <h5>Gestión de Capacidad en Servidor</h5>
                 <p>
-                  Tu plaza se bloquea con hold temporal garantizado por la base de datos para evitar sobreventa.
+                  Comprobación de aforo en servidor y asignación temporal mediante hold transaccional.
                 </p>
               </div>
             </div>
@@ -194,9 +194,9 @@ export function ParkingDetailModal({
             <div className="guarantee-card">
               <Sparkles size={20} className="guarantee-icon" />
               <div>
-                <h5>Cancelación Gratuita</h5>
+                <h5>Política de Cancelación</h5>
                 <p>
-                  Reembolso completo garantizado cancelando hasta 24 horas antes del inicio de tu estancia.
+                  Cancelación y reembolso según las condiciones particulares del contrato del operador seleccionado.
                 </p>
               </div>
             </div>

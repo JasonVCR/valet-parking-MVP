@@ -224,11 +224,11 @@ export function ComparisonModal({
                       <div className="table-features-box">
                         <span className="feature-item">
                           <ShieldCheck size={13} className="shield-icon" />
-                          Capacidad atómica bloqueada
+                          Gestión de aforo en servidor
                         </span>
                         <span className="feature-item">
                           <Check size={13} className="check-icon" />
-                          Cancelación gratuita hasta 24h
+                          Política según operador
                         </span>
                       </div>
                     </td>

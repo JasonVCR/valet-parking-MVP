@@ -116,11 +116,11 @@ export function HeroSearch({ airports, isDemoMode = false }: HeroSearchProps) {
             <div className="hero-pills-row">
               <span className="pill-badge pill-blue">
                 <Sparkles size={13} />
-                Marketplace Oficial de Aeropuertos
+                Marketplace de Parking en Aeropuertos
               </span>
               <span className="pill-badge pill-emerald">
                 <ShieldCheck size={13} />
-                Capacidad 100% Garantizada
+                Gestión de Capacidad en Tiempo Real
               </span>
             </div>
 
@@ -128,23 +128,23 @@ export function HeroSearch({ airports, isDemoMode = false }: HeroSearchProps) {
               Aparcamiento seguro y servicio valet en los principales aeropuertos
             </h1>
             <p className="hero-main-desc">
-              Compara operadores autorizados, asegura tu plaza con cálculo atómico de precio en servidor y viaja sin incertidumbre ni retrasos.
+              Compara opciones de aparcamiento y servicio valet en aeropuertos con tarifas calculadas de forma exacta en el servidor.
             </p>
 
             <div className="hero-trust-metrics">
               <div className="trust-item">
-                <Star size={14} className="star-icon" />
-                <span><strong>4.9 / 5</strong> satisfacción media</span>
+                <ShieldCheck size={14} />
+                <span><strong>Operadores registrados</strong> y verificados</span>
               </div>
               <span className="trust-divider">•</span>
               <div className="trust-item">
                 <Plane size={14} />
-                <span>Salidas directas a terminal</span>
+                <span>Modalidad Valet y Lanzadera</span>
               </div>
               <span className="trust-divider">•</span>
               <div className="trust-item">
-                <ShieldCheck size={14} />
-                <span>Cancelación gratuita hasta 24h</span>
+                <Sparkles size={14} />
+                <span>Condiciones de cancelación claras</span>
               </div>
             </div>
           </div>

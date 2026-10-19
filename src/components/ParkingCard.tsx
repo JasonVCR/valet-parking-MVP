@@ -148,10 +148,9 @@ export function ParkingCard({
 
           {/* Highlights & Ratings */}
           <div className="card-meta-row">
-            <div className="rating-badge" title="Valoración demo con fines ilustrativos">
-              <Star size={13} className="star-icon" />
-              <span>4.9</span>
-              <span className="rating-sub">(opiniones demo)</span>
+            <div className="verified-status-badge" title="Instalación con control de capacidad en servidor">
+              <ShieldCheck size={13} className="verified-icon" />
+              <span>Plaza verificada</span>
             </div>
             <span className="meta-sep">•</span>
             <span className="meta-feature">

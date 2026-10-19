@@ -109,7 +109,7 @@ export function Header({
                 </div>
               )}
               <span className="brand-subtitle">
-                Marketplace Oficial de Aparcamiento en Aeropuertos
+                Marketplace de Aparcamiento en Aeropuertos
               </span>
             </div>
           </div>
@@ -123,18 +123,20 @@ export function Header({
               type="button"
               onClick={() => handleFeatureNotice("Portal de Operadores")}
               className="nav-btn-secondary"
+              title="Portal de Operadores (disponible en Incremento 2)"
             >
               <LayoutDashboard size={14} />
-              <span>Operadores</span>
+              <span className="nav-btn-text">Operadores</span>
               <span className="tag-soon">Inc. 2</span>
             </button>
             <button
               type="button"
               onClick={() => handleFeatureNotice("Gestión de Reservas")}
               className="nav-btn-outline"
+              title="Gestión de Reservas (disponible en Incremento 2)"
             >
               <ShieldCheck size={14} />
-              <span>Mis Reservas</span>
+              <span className="nav-btn-text">Mis Reservas</span>
               <span className="tag-soon">Inc. 2</span>
             </button>
           </nav>

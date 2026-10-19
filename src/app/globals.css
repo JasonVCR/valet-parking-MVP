@@ -79,22 +79,25 @@ button {
   position: sticky;
   top: 0;
   z-index: 40;
-  background-color: rgba(255, 255, 255, 0.95);
+  background-color: rgba(255, 255, 255, 0.98);
   backdrop-filter: blur(12px);
   border-bottom: 1px solid var(--border-slate-200);
+  width: 100%;
 }
 
 .demo-top-banner {
   background-color: var(--bg-slate-900);
   color: #cbd5e1;
   font-size: 0.75rem;
-  line-height: 1rem;
-  padding: 0.4rem 1rem;
+  line-height: 1.25rem;
+  padding: 0.35rem 1rem;
   display: flex;
   align-items: center;
   justify-content: center;
   gap: 0.5rem;
   text-align: center;
+  flex-wrap: wrap;
+  width: 100%;
 }
 
 .demo-dot {
@@ -129,6 +132,7 @@ button {
   max-width: 1240px;
   margin: 0 auto;
   padding: 0 1rem;
+  width: 100%;
 }
 
 @media (min-width: 640px) {
@@ -141,7 +145,9 @@ button {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  height: 4rem;
+  min-height: 4rem;
+  height: auto;
+  padding: 0.5rem 0;
   gap: 1rem;
 }
 
@@ -149,6 +155,8 @@ button {
   display: flex;
   align-items: center;
   gap: 0.75rem;
+  min-width: 0;
+  flex-shrink: 1;
 }
 
 .logo-badge {
@@ -162,6 +170,7 @@ button {
   color: white;
   box-shadow: var(--shadow-sm);
   transition: transform 0.15s ease;
+  flex-shrink: 0;
 }
 
 .logo-badge:hover {
@@ -175,12 +184,14 @@ button {
 .brand-info {
   display: flex;
   flex-direction: column;
+  min-width: 0;
 }
 
 .brand-display {
   display: flex;
   align-items: center;
   gap: 0.5rem;
+  min-width: 0;
 }
 
 .brand-title {
@@ -188,6 +199,9 @@ button {
   font-size: 1.125rem;
   color: var(--text-slate-900);
   letter-spacing: -0.02em;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .brand-edit-btn {
@@ -197,6 +211,7 @@ button {
   cursor: pointer;
   padding: 2px;
   border-radius: 4px;
+  flex-shrink: 0;
 }
 
 .brand-edit-btn:hover {
@@ -231,12 +246,16 @@ button {
   font-size: 0.6875rem;
   color: var(--text-slate-500);
   font-weight: 500;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .header-nav {
   display: flex;
   align-items: center;
   gap: 0.5rem;
+  flex-shrink: 0;
 }
 
 .nav-link {
@@ -246,6 +265,7 @@ button {
   border-radius: var(--radius-md);
   color: var(--text-slate-600);
   transition: all 0.15s ease;
+  white-space: nowrap;
 }
 
 .nav-link.active, .nav-link:hover {
@@ -263,6 +283,8 @@ button {
   border-radius: var(--radius-md);
   cursor: pointer;
   transition: all 0.15s ease;
+  white-space: nowrap;
+  flex-shrink: 0;
 }
 
 .nav-btn-secondary {
@@ -295,6 +317,66 @@ button {
   border-radius: 4px;
   font-weight: 700;
   text-transform: uppercase;
+}
+
+@media (max-width: 768px) {
+  .header-row {
+    min-height: 3.5rem;
+    gap: 0.5rem;
+    padding: 0.35rem 0;
+  }
+
+  .logo-badge {
+    width: 2.25rem;
+    height: 2.25rem;
+  }
+
+  .brand-title {
+    font-size: 0.9375rem;
+  }
+
+  .header-nav {
+    gap: 0.25rem;
+  }
+
+  .nav-link,
+  .nav-btn-secondary,
+  .nav-btn-outline {
+    padding: 0.35rem 0.5rem;
+    font-size: 0.75rem;
+  }
+
+  .tag-soon {
+    font-size: 0.5625rem;
+    padding: 0.05rem 0.25rem;
+  }
+}
+
+@media (max-width: 540px) {
+  .demo-top-banner {
+    font-size: 0.6875rem;
+    padding: 0.25rem 0.5rem;
+    line-height: 1.15rem;
+  }
+
+  .brand-group {
+    gap: 0.5rem;
+  }
+
+  .brand-subtitle {
+    display: none;
+  }
+
+  .nav-btn-secondary .nav-btn-text,
+  .nav-btn-outline .nav-btn-text {
+    display: none;
+  }
+
+  .nav-btn-secondary,
+  .nav-btn-outline {
+    padding: 0.35rem 0.45rem;
+    gap: 0.25rem;
+  }
 }
 
 /* ─── Hero Search Section ─── */
@@ -1149,6 +1231,21 @@ button {
   font-size: 0.75rem;
   color: var(--text-slate-500);
   margin-bottom: 0.75rem;
+}
+
+.verified-status-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+  color: var(--accent-emerald);
+  font-weight: 600;
+  background-color: var(--accent-emerald-light);
+  padding: 0.15rem 0.45rem;
+  border-radius: var(--radius-sm);
+}
+
+.verified-icon {
+  color: var(--accent-emerald);
 }
 
 .rating-badge {

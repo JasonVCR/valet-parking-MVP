@@ -25,8 +25,8 @@ export const FAQ_ITEMS: FaqItem[] = [
     categoryLabel: "Servicio Valet",
     question: "¿Cómo funciona exactamente el servicio de Valet Parking en la terminal?",
     answer:
-      "Conduces tu propio vehículo directamente hasta el carril de salidas de la terminal correspondiente a tu vuelo. Un chófer profesional uniformado y debidamente acreditado te esperará en el punto acordado. Juntos realizaréis una rápida inspección fotográfica del vehículo y kilometraje antes de firmar el acta digital de entrega. El chófer traslada tu coche a las instalaciones privadas y vigiladas. A tu regreso, tras aterrizar y recoger tu equipaje, nos llamas y te devolverán tu vehículo en la misma puerta de la terminal de llegadas sin esperas ni traslados.",
-    highlight: "Entrega directa en salidas y recogida en llegadas (0 min de espera).",
+      "Conduces tu vehículo hasta el punto acordado en salidas de la terminal correspondiente a tu vuelo. El personal del operador te esperará para realizar la comprobación del estado del coche antes de la entrega. El conductor traslada tu vehículo a las instalaciones de aparcamiento del operador. A tu regreso, tras aterrizar y recoger tu equipaje, coordinas la devolución de tu coche en la terminal acordada.",
+    highlight: "Entrega y recogida en terminal coordinada directamente con el operador.",
     popular: true,
   },
   {
@@ -35,8 +35,8 @@ export const FAQ_ITEMS: FaqItem[] = [
     categoryLabel: "Servicio Valet",
     question: "¿Qué diferencia hay entre Valet Parking y Servicio Lanzadera (Shuttle)?",
     answer:
-      "• Valet Parking: Máximo confort. Entregas y recoges el vehículo en la puerta de la terminal con chófer. Es la opción ideal si viajas en familia, con equipaje pesado o por negocios.\n• Servicio Lanzadera (Shuttle): Conduces hasta el parking vigilado cercano al aeropuerto (a 3-8 minutos) y un minibús privado y gratuito te traslada a ti y a tus acompañantes hasta la terminal, recogiéndote a la vuelta.",
-    highlight: "Elige según si priorizas comodidad máxima (Valet) o precio más económico (Lanzadera).",
+      "• Valet Parking: Entregas y recoges el vehículo en la propia terminal con el conductor del operador. Es una opción pensada para mayor comodidad y rapidez en salidas y llegadas.\n• Servicio Lanzadera (Shuttle): Conduces hasta el parking ubicado en las inmediaciones del aeropuerto y un vehículo de cortesía del operador traslada a los pasajeros hasta la terminal.",
+    highlight: "Compara entre servicio valet directo en terminal y aparcamiento con transporte lanzadera.",
     popular: true,
   },
   {
@@ -45,17 +45,17 @@ export const FAQ_ITEMS: FaqItem[] = [
     categoryLabel: "Custodia y Seguridad",
     question: "¿Dónde queda guardado mi vehículo y qué medidas de seguridad existen?",
     answer:
-      "Los parkings adheridos a la plataforma disponen de recintos privados cerrados perimetralmente, dotados de barrera de control de accesos, vigilancia física y circuito cerrado de televisión (CCTV) 24/7. Además, cada reserva incluye un seguro de responsabilidad civil que cubre cualquier incidencia durante el traslado y la estancia bajo custodia del operador.",
-    highlight: "Recintos cerrados y vigilancia continua durante toda tu estancia.",
+      "Los parkings adheridos a la plataforma disponen de recintos cerrados perimetralmente con control de accesos, vigilancia y circuito de cámaras (CCTV). Cada operador cuenta con sus pólizas y coberturas de seguro aplicables durante la estancia del vehículo en sus instalaciones.",
+    highlight: "Instalaciones con control de accesos y vigilancia según las especificaciones del operador.",
   },
   {
     id: "faq-4",
     category: "flights",
     categoryLabel: "Vuelos y Retrasos",
-    question: "¿Qué ocurre si mi vuelo de vuelta se retrasa o aterriza de madrugada?",
+    question: "¿Qué ocurre si mi vuelo de vuelta se retrasa o aterriza en horario imprevisto?",
     answer:
-      "Los operadores monitorean el número de vuelo indicado en la reserva. En caso de retraso, el equipo ajusta el horario de entrega para tener tu vehículo listo en el momento exacto en que salgas de la terminal. Si el retraso supera las 2 horas respecto a la hora prevista, se aplicará la tarifa horaria estipulada por el operador sin penalizaciones abusivas.",
-    highlight: "Seguimiento de vuelo en tiempo real y asistencia ante imprevistos.",
+      "Se recomienda indicar el número de vuelo en la reserva para facilitar el seguimiento por parte del operador. En caso de retraso significativo, se aplican las tarifas horarias o suplementos estipulados en las condiciones particulares del operador contratado.",
+    highlight: "Seguimiento operativo y asistencia conforme a las condiciones de cada operador.",
     popular: true,
   },
   {
@@ -64,8 +64,8 @@ export const FAQ_ITEMS: FaqItem[] = [
     categoryLabel: "Reserva y Pagos",
     question: "¿Cómo se confirma la reserva y cuándo se realiza el cobro?",
     answer:
-      "Durante la búsqueda tu plaza se reserva temporalmente mediante un bloqueo (hold) atómico en el servidor para evitar sobreventa. El cobro final se procesa de forma segura a través de Stripe Connect una vez confirmada la reserva. Recibirás tu justificante con localizador único inmediatamente por correo electrónico.",
-    highlight: "Bloqueo atómico contra sobreventa y pago seguro vía Stripe Connect.",
+      "Durante la búsqueda tu plaza se verifica en tiempo real en la base de datos con asignación temporal para evitar sobreventa. Los precios se calculan de manera determinista en el servidor en céntimos enteros. La pasarela de pago seguro procesa la transacción de acuerdo con la tarifa y modalidad seleccionada.",
+    highlight: "Verificación de capacidad en tiempo real y precios calculados en el servidor.",
   },
   {
     id: "faq-6",
@@ -73,7 +73,7 @@ export const FAQ_ITEMS: FaqItem[] = [
     categoryLabel: "Reserva y Pagos",
     question: "¿Puedo cancelar o modificar mi reserva? ¿Tiene algún coste?",
     answer:
-      "Todas las reservas estándar en AeroValet ofrecen cancelación 100% gratuita hasta 24 horas antes de la hora de entrega fijada en la reserva. Si cancelas antes de dicho plazo, el reembolso del importe íntegro se procesa de manera automática al mismo método de pago utilizado.",
-    highlight: "Cancelación flexible gratuita hasta 24 horas antes de la entrada.",
+      "Las condiciones de modificación y cancelación están sujetas a la tarifa y política comercial de cada operador de aparcamiento. Podrás revisar el detalle de la política de cancelación aplicable antes de completar la reserva.",
+    highlight: "Condiciones de cancelación y reembolso según la tarifa y operador seleccionado.",
   },
 ];

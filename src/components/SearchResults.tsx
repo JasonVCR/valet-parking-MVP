@@ -126,7 +126,7 @@ export function SearchResults({
                 Aparcamientos en {airport ? airport.name : "Aeropuerto"}
               </h1>
               <p className="results-main-sub">
-                Precios transparentes garantizados para {diffDays} {diffDays === 1 ? "día" : "días"} ({diffHours}h).
+                Precios calculados en servidor para {diffDays} {diffDays === 1 ? "día" : "días"} ({diffHours}h).
               </p>
             </div>
 

@@ -13,15 +13,19 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "Valet Parking MVP | Reserva de Aparcamiento en Aeropuertos",
+  title: "AeroValet | Reserva de Aparcamiento en Aeropuertos",
   description:
-    "Marketplace de reserva de plazas y servicio valet en los principales aeropuertos. Reserva segura con verificación de capacidad.",
+    "Marketplace de reserva de plazas y servicio valet en aeropuertos. Tarifas calculadas en servidor con verificación de capacidad.",
+  icons: {
+    icon: "/favicon.ico",
+    apple: "/icons/icon-192.png",
+  },
 };
 
 export default function RootLayout({ children }: LayoutProps<"/">) {
   return (
-    <html lang="en" className={`${geistSans.variable} ${geistMono.variable}`}>
-      <body>{children}</body>
+    <html lang="es" suppressHydrationWarning className={`${geistSans.variable} ${geistMono.variable}`}>
+      <body suppressHydrationWarning>{children}</body>
     </html>
   );
 }
