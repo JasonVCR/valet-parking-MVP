@@ -8,6 +8,7 @@ import {
   computeTotalAmount,
   formatMoney,
 } from "@/lib/pricing";
+import { calculateQuote } from "@/lib/pricing/engine";
 import {
   CarFront,
   Bus,
@@ -50,10 +51,25 @@ export function ParkingCard({
 
   if (primaryService) {
     try {
-      units = computeBillableUnits(primaryService.pricing_unit, entryAt, exitAt);
-      totalAmount = computeTotalAmount(primaryService.price_amount, units);
+      const quote = calculateQuote({
+        serviceId: primaryService.id,
+        serviceName: primaryService.name,
+        basePriceAmount: primaryService.price_amount,
+        currency: primaryService.currency,
+        pricingUnit: primaryService.pricing_unit,
+        entryAt,
+        exitAt,
+      });
+      units = quote.units;
+      totalAmount = quote.total_amount;
     } catch {
       // Fallback calculation handled gracefully
+      try {
+        units = computeBillableUnits(primaryService.pricing_unit, entryAt, exitAt);
+        totalAmount = computeTotalAmount(primaryService.price_amount, units);
+      } catch {
+        // Fallback
+      }
     }
   }
 

@@ -38,6 +38,16 @@ export const createBookingHoldSchema = z
       .max(20, { message: "Teléfono no válido" })
       .optional()
       .nullable(),
+    vehicle_category: z.enum(["standard", "suv", "van", "motorcycle"]).optional().nullable(),
+    selected_extras: z
+      .array(
+        z.object({
+          extra_id: z.string().uuid({ message: "Identificador de extra no válido" }),
+          quantity: z.number().int().min(1).max(10).default(1),
+        })
+      )
+      .optional()
+      .default([]),
   })
   .superRefine((data, ctx) => {
     const now = Date.now();

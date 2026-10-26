@@ -2392,3 +2392,253 @@ button {
     justify-content: space-between;
   }
 }
+
+/* ─── Search Ranking Transparency Note ─── */
+.ranking-transparency-note {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  background-color: #f8fafc;
+  border: 1px solid #e2e8f0;
+  border-left: 3px solid #3b82f6;
+  border-radius: var(--radius-md);
+  padding: 0.6rem 0.85rem;
+  font-size: 0.75rem;
+  color: #475569;
+  margin-bottom: 1rem;
+}
+
+/* ─── Pricing Breakdown & Extras Selector in Detail Modal ─── */
+.pricing-breakdown-box {
+  background-color: #f8fafc;
+  border: 1px solid #e2e8f0;
+  border-radius: var(--radius-lg);
+  padding: 1rem;
+}
+
+.breakdown-lines-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+}
+
+.breakdown-line-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-size: 0.8125rem;
+  color: #334155;
+  padding: 0.25rem 0;
+  border-bottom: 1px dashed #e2e8f0;
+}
+
+.breakdown-line-row:last-of-type {
+  border-bottom: none;
+}
+
+.breakdown-total-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-size: 0.9375rem;
+  color: #0f172a;
+  padding-top: 0.5rem;
+  margin-top: 0.35rem;
+  border-top: 2px solid #cbd5e1;
+}
+
+.breakdown-total-row .total-val {
+  color: var(--primary-blue);
+  font-size: 1.125rem;
+}
+
+/* Extras Cards */
+.extras-selection-grid {
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+}
+
+.extra-selectable-card {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.75rem;
+  padding: 0.75rem 1rem;
+  border: 1.5px solid #e2e8f0;
+  border-radius: var(--radius-lg);
+  cursor: pointer;
+  background-color: white;
+  transition: all 0.15s ease;
+}
+
+.extra-selectable-card:hover {
+  border-color: #93c5fd;
+  background-color: #f8fafc;
+}
+
+.extra-selectable-card.selected {
+  border-color: #2563eb;
+  background-color: #eff6ff;
+}
+
+.extra-checkbox-col {
+  margin-top: 2px;
+}
+
+.extra-checkbox {
+  width: 1.1rem;
+  height: 1.1rem;
+  accent-color: #2563eb;
+  cursor: pointer;
+}
+
+.extra-info-col {
+  flex: 1;
+}
+
+.extra-top-line {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 0.2rem;
+}
+
+.extra-name {
+  font-size: 0.875rem;
+  font-weight: 700;
+  color: #0f172a;
+}
+
+.extra-price-tag {
+  font-size: 0.8125rem;
+  font-weight: 800;
+  color: #2563eb;
+  background-color: #dbeafe;
+  padding: 0.2rem 0.5rem;
+  border-radius: 9999px;
+}
+
+.extra-desc {
+  font-size: 0.75rem;
+  color: #64748b;
+  margin: 0;
+}
+
+/* Cancellation Policy in Detail Modal */
+.cancellation-policy-card {
+  background-color: #ecfdf5;
+  border: 1px solid #a7f3d0;
+  border-radius: var(--radius-lg);
+  padding: 1rem;
+  margin-top: 1rem;
+}
+
+.policy-header {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  color: #065f46;
+  margin-bottom: 0.5rem;
+}
+
+.policy-header h5 {
+  font-size: 0.875rem;
+  font-weight: 800;
+  margin: 0;
+}
+
+.policy-bullets {
+  margin: 0;
+  padding-left: 1.25rem;
+  font-size: 0.75rem;
+  color: #047857;
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+}
+
+/* Legal Acceptances in Detail Modal */
+.legal-acceptances-box {
+  background-color: #f1f5f9;
+  border: 1px solid #cbd5e1;
+  border-radius: var(--radius-lg);
+  padding: 1rem;
+  margin-top: 1rem;
+}
+
+.legal-box-title {
+  font-size: 0.8125rem;
+  font-weight: 800;
+  color: #1e293b;
+  margin: 0 0 0.6rem 0;
+}
+
+.acceptance-field {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.6rem;
+  margin-bottom: 0.5rem;
+}
+
+.acceptance-field:last-child {
+  margin-bottom: 0;
+}
+
+.acceptance-checkbox {
+  width: 1.05rem;
+  height: 1.05rem;
+  accent-color: #2563eb;
+  margin-top: 2px;
+  cursor: pointer;
+  flex-shrink: 0;
+}
+
+.acceptance-label {
+  font-size: 0.75rem;
+  color: #334155;
+  line-height: 1.35;
+}
+
+.link-legal {
+  background: none;
+  border: none;
+  padding: 0;
+  color: #2563eb;
+  font-weight: 700;
+  text-decoration: underline;
+  cursor: pointer;
+  display: inline;
+}
+
+.link-legal:hover {
+  color: #1d4ed8;
+}
+
+.btn-modal-proceed.disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+  pointer-events: none;
+}
+
+/* Legal Submodal Viewer */
+.submodal-backdrop {
+  z-index: 1100;
+}
+
+.legal-reader-box {
+  max-width: 680px;
+  max-height: 85vh;
+}
+
+.legal-text-scroll {
+  background-color: #f8fafc;
+  padding: 1rem;
+}
+
+.legal-markdown-view {
+  white-space: pre-wrap;
+  font-family: inherit;
+  font-size: 0.8125rem;
+  line-height: 1.6;
+  color: #1e293b;
+}

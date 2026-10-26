@@ -17,6 +17,7 @@ import {
   Bus,
   RotateCcw,
   AlertCircle,
+  Info,
 } from "./icons";
 
 
@@ -101,7 +102,10 @@ export function SearchResults({
 
   const [isHolding, setIsHolding] = useState(false);
 
-  const handleSelectFacility = async (facility: FacilityWithServices) => {
+  const handleSelectFacility = async (
+    facility: FacilityWithServices,
+    selectedExtras?: { extra_id: string; quantity: number }[]
+  ) => {
     const srv = facility.services[0];
     if (!srv) {
       setBookingNotice(`La instalación ${facility.name} no cuenta con servicios activos.`);
@@ -109,7 +113,7 @@ export function SearchResults({
     }
 
     setIsHolding(true);
-    setBookingNotice("Solicitando asignación de plaza y bloqueo de capacidad en el servidor...");
+    setBookingNotice("Solicitando asignación de plaza, extras y bloqueo de capacidad en el servidor...");
 
     try {
       const res = await createBookingHoldAction({
@@ -119,6 +123,7 @@ export function SearchResults({
         exit_at: exitAt,
         guest_name: "Cliente Invitado",
         guest_email: "cliente.invitado@aerovalet.demo",
+        selected_extras: selectedExtras ?? [],
       });
 
       if (res.success && res.hold) {
@@ -127,8 +132,9 @@ export function SearchResults({
           hour: "2-digit",
           minute: "2-digit",
         });
+        const extrasCount = selectedExtras?.length ?? 0;
         setBookingNotice(
-          `${res.isDemo ? "🧪 [Simulación Demo] " : "🔒 "}Plaza bloqueada temporalmente en servidor para "${facility.name}". Hold: ${res.hold.hold_id.slice(0, 18)}... (vigente hasta las ${exp}). Tarifa calculada: ${formatted} (${res.hold.units} ${res.hold.units === 1 ? "unidad" : "unidades"}). Pasarela de pago en integración para el próximo incremento.`
+          `${res.isDemo ? "🧪 [Simulación Demo] " : "🔒 "}Plaza bloqueada temporalmente en servidor para "${facility.name}". Hold: ${res.hold.hold_id.slice(0, 18)}... (vigente hasta las ${exp}). Tarifa total: ${formatted} (${res.hold.units} ${res.hold.units === 1 ? "unidad" : "unidades"}${extrasCount > 0 ? ` + ${extrasCount} ${extrasCount === 1 ? "extra" : "extras"}` : ""}). Cancelación gratuita hasta 24h antes.`
         );
       } else {
         setBookingNotice(`No se pudo reservar la plaza: ${res.error || "Capacidad no disponible"}`);
@@ -298,6 +304,17 @@ export function SearchResults({
           </div>
         )}
 
+        {/* Ranking Transparency Note */}
+        {facilities.length > 0 && (
+          <div className="ranking-transparency-note" role="note">
+            <Info size={13} />
+            <span>
+              <strong>Criterio de clasificación neutral:</strong> Los resultados se ordenan exclusivamente por{" "}
+              {sortBy === "price_asc" ? "precio total íntegro para las fechas elegidas" : "orden alfabético"}. AeroValet no aplica subastas de pujas, comisiones preferentes ni posicionamientos pagados.
+            </span>
+          </div>
+        )}
+
         {/* Results Cards List or Empty State */}
         {filteredFacilities.length === 0 ? (
           <div className="empty-results-box">
@@ -367,9 +384,9 @@ export function SearchResults({
           entryAt={entryAt}
           exitAt={exitAt}
           onClose={() => setDetailFacility(null)}
-          onProceed={(f) => {
+          onProceed={(f, extras) => {
             setDetailFacility(null);
-            handleSelectFacility(f);
+            handleSelectFacility(f, extras);
           }}
         />
       )}

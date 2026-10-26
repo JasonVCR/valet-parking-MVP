@@ -1,13 +1,15 @@
 "use client";
 
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useMemo } from "react";
 import Image from "next/image";
-import type { FacilityWithServices } from "@/types/domain";
+import type { FacilityWithServices, SelectedExtraInput, ServiceExtra } from "@/types/domain";
+import { formatMoney } from "@/lib/pricing";
+import { calculateQuote } from "@/lib/pricing/engine";
 import {
-  computeBillableUnits,
-  computeTotalAmount,
-  formatMoney,
-} from "@/lib/pricing";
+  PLATFORM_TERMS_DOCUMENT,
+  PRIVACY_POLICY_DOCUMENT,
+  CANCELLATION_POLICY_DOCUMENT,
+} from "@/data/legalDocuments";
 import {
   X,
   ShieldCheck,
@@ -19,6 +21,7 @@ import {
   Info,
   CarFront,
   Bus,
+  Zap,
 } from "./icons";
 
 interface ParkingDetailModalProps {
@@ -26,8 +29,57 @@ interface ParkingDetailModalProps {
   entryAt: string;
   exitAt: string;
   onClose: () => void;
-  onProceed: (facility: FacilityWithServices) => void;
+  onProceed: (facility: FacilityWithServices, selectedExtras: SelectedExtraInput[]) => void;
 }
+
+// Representative available extras for the facility
+const FACILITY_SAMPLE_EXTRAS: ServiceExtra[] = [
+  {
+    id: "e0000000-0000-4000-c000-000000000001",
+    facility_id: "",
+    service_id: null,
+    name: "Lavado Exterior a Mano",
+    description: "Limpieza integral de carrocería y llantas a mano antes de la entrega",
+    price_amount: 1900, // 19.00 EUR
+    currency: "EUR",
+    pricing_unit: "per_stay",
+    is_mandatory: false,
+    max_quantity: 1,
+    active: true,
+    created_at: "2026-10-01T00:00:00Z",
+    updated_at: "2026-10-01T00:00:00Z",
+  },
+  {
+    id: "e0000000-0000-4000-c000-000000000002",
+    facility_id: "",
+    service_id: null,
+    name: "Recarga Inteligente para Vehículo Eléctrico (VE)",
+    description: "Carga garantizada hasta el 80% o 100% de batería antes de la recogida",
+    price_amount: 2500, // 25.00 EUR
+    currency: "EUR",
+    pricing_unit: "per_stay",
+    is_mandatory: false,
+    max_quantity: 1,
+    active: true,
+    created_at: "2026-10-01T00:00:00Z",
+    updated_at: "2026-10-01T00:00:00Z",
+  },
+  {
+    id: "e0000000-0000-4000-c000-000000000003",
+    facility_id: "",
+    service_id: null,
+    name: "Custodia Segura de Llaves en Caja Fuerte",
+    description: "Almacenamiento blindado con trazabilidad biométrica de operarios",
+    price_amount: 350, // 3.50 EUR
+    currency: "EUR",
+    pricing_unit: "per_stay",
+    is_mandatory: false,
+    max_quantity: 1,
+    active: true,
+    created_at: "2026-10-01T00:00:00Z",
+    updated_at: "2026-10-01T00:00:00Z",
+  },
+];
 
 export function ParkingDetailModal({
   facility,
@@ -37,15 +89,53 @@ export function ParkingDetailModal({
   onProceed,
 }: ParkingDetailModalProps) {
   const [activeImageIndex, setActiveImageIndex] = useState(0);
+  const [selectedExtraIds, setSelectedExtraIds] = useState<string[]>([]);
+  const [termsAccepted, setTermsAccepted] = useState(false);
+  const [privacyAccepted, setPrivacyAccepted] = useState(false);
+  const [showTermsModal, setShowTermsModal] = useState<"terms" | "privacy" | "cancellation" | null>(null);
 
   // Close on Escape key
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.key === "Escape") onClose();
+      if (e.key === "Escape") {
+        if (showTermsModal) {
+          setShowTermsModal(null);
+        } else {
+          onClose();
+        }
+      }
     };
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [onClose]);
+  }, [onClose, showTermsModal]);
+
+  const primaryService = facility?.services[0];
+
+  // Dynamic Server-authoritative quote calculation
+  const quote = useMemo(() => {
+    if (!facility || !primaryService) return null;
+
+    const selectedInputs: SelectedExtraInput[] = selectedExtraIds.map((id) => ({
+      extra_id: id,
+      quantity: 1,
+    }));
+
+    try {
+      return calculateQuote({
+        serviceId: primaryService.id,
+        serviceName: primaryService.name,
+        basePriceAmount: primaryService.price_amount,
+        currency: primaryService.currency,
+        pricingUnit: primaryService.pricing_unit,
+        entryAt,
+        exitAt,
+        availableExtras: FACILITY_SAMPLE_EXTRAS,
+        selectedExtras: selectedInputs,
+      });
+    } catch {
+      return null;
+    }
+  }, [facility, primaryService, entryAt, exitAt, selectedExtraIds]);
 
   if (!facility) return null;
 
@@ -58,23 +148,19 @@ export function ParkingDetailModal({
     "/images/parking_aerial_overview_1792282144729.jpg",
   ];
 
-  const primaryService = facility.services[0];
-  let units = 1;
-  let totalAmount = primaryService ? primaryService.price_amount : 0;
+  const handleToggleExtra = (extraId: string) => {
+    setSelectedExtraIds((prev) =>
+      prev.includes(extraId) ? prev.filter((id) => id !== extraId) : [...prev, extraId]
+    );
+  };
 
-  if (primaryService) {
-    try {
-      units = computeBillableUnits(primaryService.pricing_unit, entryAt, exitAt);
-      totalAmount = computeTotalAmount(primaryService.price_amount, units);
-    } catch {
-      // fallback
-    }
-  }
-
-  const unitLabels: Record<string, string> = {
-    per_stay: "estancia",
-    per_day: "día",
-    per_hour: "hora",
+  const handleProceedClick = () => {
+    if (!termsAccepted || !privacyAccepted) return;
+    const selectedInputs: SelectedExtraInput[] = selectedExtraIds.map((id) => ({
+      extra_id: id,
+      quantity: 1,
+    }));
+    onProceed(facility, selectedInputs);
   };
 
   return (
@@ -94,7 +180,7 @@ export function ParkingDetailModal({
                 <span>{isValet ? "Valet en Terminal" : "Lanzadera Shuttle"}</span>
               </span>
               <span className="pill-badge pill-slate">
-                Operador: {facility.operator.name}
+                Operador autorizado: {facility.operator.name}
               </span>
             </div>
             <h3 id="detail-title" className="modal-title">
@@ -155,50 +241,135 @@ export function ParkingDetailModal({
             </div>
           </div>
 
-          {/* Service Information */}
-          <div className="detail-info-block">
-            <h4 className="block-title">Servicios incluidos en esta instalación</h4>
-            <div className="services-grid-detail">
-              {facility.services.map((srv) => (
-                <div key={srv.id} className="srv-detail-card">
-                  <div className="srv-card-top">
-                    <span className="srv-name">{srv.name}</span>
-                    <span className="srv-price-badge">
-                      {formatMoney(srv.price_amount, srv.currency)}/{unitLabels[srv.pricing_unit] ?? srv.pricing_unit}
+          {/* Pricing Itemized Breakdown */}
+          {quote && (
+            <div className="detail-info-block pricing-breakdown-box">
+              <h4 className="block-title">Desglose transparente del precio</h4>
+              <div className="breakdown-lines-list">
+                {quote.breakdown.map((line, idx) => (
+                  <div key={idx} className="breakdown-line-row">
+                    <span className="breakdown-label">{line.label}</span>
+                    <span className="breakdown-amount">
+                      {formatMoney(line.total_price, quote.currency)}
                     </span>
                   </div>
-                  {srv.description && (
-                    <p className="srv-desc">{srv.description}</p>
-                  )}
-                  <div className="srv-badge-verified">
-                    <Check size={12} />
-                    <span>Servicio verificado en base de datos</span>
-                  </div>
+                ))}
+                <div className="breakdown-total-row">
+                  <strong>Total final garantizado:</strong>
+                  <strong className="total-val">
+                    {formatMoney(quote.total_amount, quote.currency)}
+                  </strong>
                 </div>
-              ))}
+              </div>
+            </div>
+          )}
+
+          {/* Extras / Add-ons Selector */}
+          <div className="detail-info-block">
+            <h4 className="block-title">Servicios complementarios opcionales (Extras)</h4>
+            <div className="extras-selection-grid">
+              {FACILITY_SAMPLE_EXTRAS.map((extra) => {
+                const isSelected = selectedExtraIds.includes(extra.id);
+                return (
+                  <div
+                    key={extra.id}
+                    onClick={() => handleToggleExtra(extra.id)}
+                    className={`extra-selectable-card ${isSelected ? "selected" : ""}`}
+                    role="checkbox"
+                    aria-checked={isSelected}
+                    tabIndex={0}
+                  >
+                    <div className="extra-checkbox-col">
+                      <input
+                        type="checkbox"
+                        checked={isSelected}
+                        onChange={() => {}} // handled by parent onClick
+                        className="extra-checkbox"
+                        aria-label={`Seleccionar ${extra.name}`}
+                      />
+                    </div>
+                    <div className="extra-info-col">
+                      <div className="extra-top-line">
+                        <span className="extra-name">{extra.name}</span>
+                        <span className="extra-price-tag">
+                          +{formatMoney(extra.price_amount, extra.currency)}
+                        </span>
+                      </div>
+                      {extra.description && (
+                        <p className="extra-desc">{extra.description}</p>
+                      )}
+                    </div>
+                  </div>
+                );
+              })}
             </div>
           </div>
 
-          {/* Operational Guarantees */}
-          <div className="detail-guarantees-grid">
-            <div className="guarantee-card">
-              <ShieldCheck size={20} className="guarantee-icon" />
-              <div>
-                <h5>Gestión de Capacidad en Servidor</h5>
-                <p>
-                  Comprobación de aforo en servidor y asignación temporal mediante hold transaccional.
-                </p>
-              </div>
+          {/* Cancellation Policy Banner */}
+          <div className="cancellation-policy-card">
+            <div className="policy-header">
+              <ShieldCheck size={18} className="policy-icon" />
+              <h5>Política Oficial de Cancelación y Reembolso</h5>
+            </div>
+            <ul className="policy-bullets">
+              <li>
+                <strong>Cancelación gratuita:</strong> 100% de reembolso si se solicita con al menos 24 horas de antelación al inicio del servicio.
+              </li>
+              <li>
+                <strong>Cancelación con aviso inferior a 24h:</strong> Penalización del 50% por bloqueo de plaza; reembolso del 50% restante.
+              </li>
+              <li>
+                <strong>No presentación (No-Show):</strong> Sin reembolso (100% penalización).
+              </li>
+              <li>
+                <strong>Modificaciones de horario:</strong> Gratuitas hasta 2 horas antes de la entrada (según disponibilidad).
+              </li>
+            </ul>
+          </div>
+
+          {/* Legal Acceptances (Unchecked checkboxes by default) */}
+          <div className="legal-acceptances-box">
+            <h5 className="legal-box-title">Condiciones contractuales y privacidad</h5>
+            <div className="acceptance-field">
+              <input
+                type="checkbox"
+                id="accept-terms"
+                checked={termsAccepted}
+                onChange={(e) => setTermsAccepted(e.target.checked)}
+                className="acceptance-checkbox"
+              />
+              <label htmlFor="accept-terms" className="acceptance-label">
+                He leído y acepto expresamente los{" "}
+                <button
+                  type="button"
+                  onClick={() => setShowTermsModal("terms")}
+                  className="link-legal"
+                >
+                  Términos de AeroValet (v{PLATFORM_TERMS_DOCUMENT.version})
+                </button>{" "}
+                y las condiciones de contratación del operador <strong>{facility.operator.name}</strong>.
+              </label>
             </div>
 
-            <div className="guarantee-card">
-              <Sparkles size={20} className="guarantee-icon" />
-              <div>
-                <h5>Política de Cancelación</h5>
-                <p>
-                  Cancelación y reembolso según las condiciones particulares del contrato del operador seleccionado.
-                </p>
-              </div>
+            <div className="acceptance-field">
+              <input
+                type="checkbox"
+                id="accept-privacy"
+                checked={privacyAccepted}
+                onChange={(e) => setPrivacyAccepted(e.target.checked)}
+                className="acceptance-checkbox"
+              />
+              <label htmlFor="accept-privacy" className="acceptance-label">
+                He leído la{" "}
+                <button
+                  type="button"
+                  onClick={() => setShowTermsModal("privacy")}
+                  className="link-legal"
+                >
+                  Política de Privacidad (v{PRIVACY_POLICY_DOCUMENT.version})
+                </button>{" "}
+                y autorizo el tratamiento de mis datos de contacto para la gestión de la reserva y control de acceso.
+              </label>
             </div>
           </div>
 
@@ -206,7 +377,7 @@ export function ParkingDetailModal({
           <div className="pending-validation-notice">
             <Info size={14} />
             <div>
-              <strong>Aviso de transparencia:</strong> Los datos operativos, coberturas de seguro y cámaras CCTV están sujetos a las cláusulas del contrato de cada operador adherido al marketplace.
+              <strong>Aviso de transparencia:</strong> Los datos y condiciones contractuales quedan registrados inmutablemente en el servidor bajo protocolo SHA-256 en el momento de crear la reserva.
             </div>
           </div>
         </div>
@@ -214,12 +385,12 @@ export function ParkingDetailModal({
         {/* Modal Footer / Checkout CTA */}
         <div className="modal-footer">
           <div className="footer-price-info">
-            <span className="footer-price-label">Total estimado de la estancia:</span>
+            <span className="footer-price-label">Total de la estancia:</span>
             <span className="footer-price-val">
-              {formatMoney(totalAmount, primaryService?.currency ?? facility.operator.currency)}
+              {formatMoney(quote?.total_amount ?? 0, primaryService?.currency ?? facility.operator.currency)}
             </span>
             <span className="footer-price-units">
-              ({units} {units === 1 ? "unidad" : "unidades"})
+              ({quote?.units ?? 1} {(quote?.units ?? 1) === 1 ? "unidad" : "unidades"})
             </span>
           </div>
 
@@ -233,8 +404,14 @@ export function ParkingDetailModal({
             </button>
             <button
               type="button"
-              onClick={() => onProceed(facility)}
-              className="btn-modal-proceed"
+              onClick={handleProceedClick}
+              disabled={!termsAccepted || !privacyAccepted}
+              className={`btn-modal-proceed ${(!termsAccepted || !privacyAccepted) ? "disabled" : ""}`}
+              title={
+                !termsAccepted || !privacyAccepted
+                  ? "Debe marcar las casillas obligatorias de condiciones y privacidad para continuar"
+                  : "Proceder con el bloqueo de plaza en el servidor"
+              }
             >
               <span>Continuar con la reserva</span>
               <ArrowRight size={14} />
@@ -242,6 +419,48 @@ export function ParkingDetailModal({
           </div>
         </div>
       </div>
+
+      {/* Submodal for Legal Reading */}
+      {showTermsModal && (
+        <div className="modal-backdrop submodal-backdrop">
+          <div className="modal-container legal-reader-box">
+            <div className="modal-header">
+              <h3>
+                {showTermsModal === "terms"
+                  ? PLATFORM_TERMS_DOCUMENT.title
+                  : showTermsModal === "privacy"
+                  ? PRIVACY_POLICY_DOCUMENT.title
+                  : CANCELLATION_POLICY_DOCUMENT.title}
+              </h3>
+              <button
+                type="button"
+                onClick={() => setShowTermsModal(null)}
+                className="modal-close-btn"
+              >
+                <X size={18} />
+              </button>
+            </div>
+            <div className="modal-body-scrollable legal-text-scroll">
+              <pre className="legal-markdown-view">
+                {showTermsModal === "terms"
+                  ? PLATFORM_TERMS_DOCUMENT.content_markdown
+                  : showTermsModal === "privacy"
+                  ? PRIVACY_POLICY_DOCUMENT.content_markdown
+                  : CANCELLATION_POLICY_DOCUMENT.content_markdown}
+              </pre>
+            </div>
+            <div className="modal-footer">
+              <button
+                type="button"
+                onClick={() => setShowTermsModal(null)}
+                className="btn-modal-proceed"
+              >
+                Entendido
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

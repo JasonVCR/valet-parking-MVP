@@ -16,6 +16,22 @@ export type OperatorStatus = "pending" | "active" | "suspended";
 
 export type PricingUnit = "per_stay" | "per_day" | "per_hour";
 
+export type PriceRuleType =
+  | "season"
+  | "weekday"
+  | "time_band"
+  | "duration_band"
+  | "vehicle_category";
+
+export type PriceAdjustmentType =
+  | "override"
+  | "fixed_addition"
+  | "percentage_bps";
+
+export type ExtraPricingUnit = "per_stay" | "per_day";
+
+export type VehicleCategory = "standard" | "suv" | "van" | "motorcycle";
+
 export type HoldStatus = "active" | "consumed" | "expired" | "released";
 
 export type BookingStatus = "confirmed" | "active" | "completed" | "cancelled";
@@ -85,6 +101,44 @@ export interface Service {
   updated_at: string;
 }
 
+export interface ServicePriceRule {
+  id: string;
+  service_id: string;
+  name: string;
+  rule_type: PriceRuleType;
+  priority: number;
+  valid_from: string | null;
+  valid_until: string | null;
+  weekdays: number[] | null;
+  entry_time_start: string | null;
+  entry_time_end: string | null;
+  min_duration_hours: number | null;
+  max_duration_hours: number | null;
+  vehicle_category: VehicleCategory | null;
+  adjustment_type: PriceAdjustmentType;
+  fixed_amount: number | null;
+  percentage_bps: number | null;
+  active: boolean;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface ServiceExtra {
+  id: string;
+  facility_id: string;
+  service_id: string | null;
+  name: string;
+  description: string | null;
+  price_amount: number;
+  currency: string;
+  pricing_unit: ExtraPricingUnit;
+  is_mandatory: boolean;
+  max_quantity: number;
+  active: boolean;
+  created_at: string;
+  updated_at: string;
+}
+
 export interface AvailabilityRule {
   id: string;
   facility_id: string;
@@ -109,24 +163,66 @@ export interface Vehicle {
   updated_at: string;
 }
 
-// ─── Price snapshot ──────────────────────────────────────────────────────────
+// ─── Price snapshot & Breakdown ──────────────────────────────────────────────
 
-/**
- * Frozen at hold-creation time. The browser never re-computes price.
- * Matches the jsonb built in create_booking_hold().
- */
-export interface PriceSnapshot {
+export interface PriceRuleAdjustmentSnapshot {
+  rule_id: string;
+  rule_name: string;
+  rule_type: PriceRuleType;
+  adjustment_type: PriceAdjustmentType;
+  original_unit_price: number;
+  adjusted_unit_price: number;
+}
+
+export interface SelectedExtraSnapshot {
+  extra_id: string;
+  name: string;
+  unit_price_amount: number;
+  pricing_unit: ExtraPricingUnit;
+  quantity: number;
+  total_amount: number;
+  is_mandatory: boolean;
+}
+
+export interface PriceLineBreakdown {
+  label: string;
+  quantity: number;
+  unit_price: number;
+  total_price: number;
+  type: "base_stay" | "season_surcharge" | "weekday_adjustment" | "duration_discount" | "extra" | "tax";
+}
+
+export interface PriceSnapshotV1 {
   service_id: string;
   service_name: string;
-  /** Integer minor units — never float */
   unit_price_amount: number;
   pricing_unit: PricingUnit;
   units: number;
-  /** Integer minor units — never float */
   total_amount: number;
   currency: string;
-  calculation_version: number;
+  calculation_version: 1;
 }
+
+export interface PriceSnapshotV2 {
+  service_id: string;
+  service_name: string;
+  currency: string;
+  pricing_unit: PricingUnit;
+  units: number;
+  base_unit_price_amount: number;
+  base_total_amount: number;
+  rules_adjustments_amount: number;
+  extras_amount: number;
+  discount_amount: number;
+  tax_amount: number;
+  total_amount: number;
+  calculation_version: 2;
+  applied_rules: PriceRuleAdjustmentSnapshot[];
+  selected_extras: SelectedExtraSnapshot[];
+  breakdown: PriceLineBreakdown[];
+}
+
+export type PriceSnapshot = PriceSnapshotV1 | PriceSnapshotV2;
 
 // ─── Holds & Bookings ────────────────────────────────────────────────────────
 
@@ -151,6 +247,11 @@ export interface BookingHold {
   updated_at: string;
 }
 
+export interface SelectedExtraInput {
+  extra_id: string;
+  quantity: number;
+}
+
 export interface CreateHoldParams {
   facility_id: string;
   service_id: string;
@@ -161,6 +262,8 @@ export interface CreateHoldParams {
   guest_email?: string | null;
   guest_name?: string | null;
   guest_phone?: string | null;
+  vehicle_category?: VehicleCategory | null;
+  selected_extras?: SelectedExtraInput[];
 }
 
 export interface HoldResult {
@@ -175,6 +278,7 @@ export interface HoldResult {
   currency: string;
   pricing_unit: PricingUnit;
   units: number;
+  price_snapshot?: PriceSnapshot;
 }
 
 export interface Booking {
@@ -221,4 +325,83 @@ export interface SearchParams {
   airport_id: string;
   entry_at: string;
   exit_at: string;
+}
+
+// ─── Legal Documents & Terms Versioning ───────────────────────────────────────
+
+export type LegalDocumentScope = "platform" | "operator";
+
+export type LegalDocumentType =
+  | "platform_terms"
+  | "privacy_policy"
+  | "operator_terms"
+  | "cancellation_policy";
+
+export type LegalDocumentStatus = "draft" | "published" | "archived";
+
+export interface LegalDocument {
+  id: string;
+  scope: LegalDocumentScope;
+  operator_id: string | null;
+  document_type: LegalDocumentType;
+  version: string;
+  language: string;
+  title: string;
+  content_markdown: string;
+  sha256_hash: string;
+  status: LegalDocumentStatus;
+  effective_from: string | null;
+  effective_until: string | null;
+  published_at: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface CancellationPolicyRule {
+  id: string;
+  operator_id: string;
+  legal_document_id: string;
+  free_cancellation_window_hours: number;
+  late_cancellation_fee_bps: number;
+  no_show_fee_bps: number;
+  allow_modifications: boolean;
+  modification_window_hours: number;
+  active: boolean;
+  created_at: string;
+}
+
+export interface BookingTermsSnapshot {
+  hold_id: string;
+  platform_terms_id: string;
+  platform_terms_version: string;
+  platform_terms_hash: string;
+  privacy_policy_id: string;
+  privacy_policy_version: string;
+  privacy_policy_hash: string;
+  operator_terms_id: string | null;
+  operator_terms_version: string | null;
+  operator_terms_hash: string | null;
+  cancellation_policy_rule_id: string | null;
+  cancellation_policy_snapshot: CancellationPolicyRule | null;
+  created_at: string;
+}
+
+export interface BookingAcceptanceInput {
+  document_id: string;
+  version: string;
+  hash: string;
+}
+
+export interface BookingAcceptance {
+  id: string;
+  hold_id: string;
+  booking_id: string | null;
+  customer_id: string | null;
+  document_id: string;
+  document_version: string;
+  document_hash: string;
+  accepted_at: string;
+  ip_address_hash: string | null;
+  user_agent_summary: string | null;
+  created_at: string;
 }

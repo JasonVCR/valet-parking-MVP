@@ -10,7 +10,7 @@
 
 import type { CreateHoldParams, HoldResult } from "@/types/domain";
 import { createBookingHoldSchema } from "@/lib/schemas/bookingHold";
-import { computeBillableUnits, computeTotalAmount } from "@/lib/pricing";
+import { calculateQuote } from "@/lib/pricing/engine";
 
 function isDemoMode(): boolean {
   return (
@@ -53,10 +53,17 @@ export async function createBookingHoldAction(
   if (isDemoMode()) {
     // Deterministic server-side calculation for demo visualization
     // Never disguised as a persistent database booking
-    const durationDays = computeBillableUnits("per_day", validData.entry_at, validData.exit_at);
-    const demoRate = 1500; // 15.00 EUR per day in minor units
-    const totalAmount = computeTotalAmount(demoRate, durationDays);
-
+    const demoQuote = calculateQuote({
+      serviceId: validData.service_id,
+      serviceName: "Servicio Demo AeroValet",
+      basePriceAmount: 1500, // 15.00 EUR per day in minor units
+      currency: "EUR",
+      pricingUnit: "per_day",
+      entryAt: validData.entry_at,
+      exitAt: validData.exit_at,
+      vehicleCategory: validData.vehicle_category ?? "standard",
+      selectedExtras: validData.selected_extras ?? [],
+    });
 
     return {
       success: true,
@@ -69,10 +76,11 @@ export async function createBookingHoldAction(
         exit_at: validData.exit_at,
         status: "active",
         expires_at: new Date(Date.now() + 15 * 60 * 1000).toISOString(),
-        price_amount: totalAmount,
+        price_amount: demoQuote.total_amount,
         currency: "EUR",
         pricing_unit: "per_day",
-        units: durationDays,
+        units: demoQuote.units,
+        price_snapshot: demoQuote,
       },
     };
   }
@@ -92,6 +100,8 @@ export async function createBookingHoldAction(
       p_guest_email: validData.guest_email ?? null,
       p_guest_name: validData.guest_name ?? null,
       p_guest_phone: validData.guest_phone ?? null,
+      p_vehicle_category: validData.vehicle_category ?? null,
+      p_selected_extras: validData.selected_extras ?? [],
     });
 
     if (error) {

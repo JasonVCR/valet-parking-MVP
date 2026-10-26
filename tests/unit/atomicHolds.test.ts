@@ -259,11 +259,16 @@ describe("Atomic Booking Holds — Timeline Capacity & Concurrency", () => {
     const validServiceId = "a0000000-0000-4000-a000-000000000002";
     const validCustomerId = "a0000000-0000-4000-a000-000000000009";
 
+    const futureEntryMs = Date.now() + 2 * 24 * 60 * 60 * 1000;
+    const futureExitMs = Date.now() + 5 * 24 * 60 * 60 * 1000;
+    const futureEntryStr = new Date(futureEntryMs).toISOString();
+    const futureExitStr = new Date(futureExitMs).toISOString();
+
     const validPayload = {
       facility_id: validFacilityId,
       service_id: validServiceId,
-      entry_at: "2026-10-25T10:00:00Z",
-      exit_at: "2026-10-28T10:00:00Z",
+      entry_at: futureEntryStr,
+      exit_at: futureExitStr,
       guest_name: "Carlos Sanchez",
       guest_email: "carlos.sanchez@example.com",
       guest_phone: "+34612345678",
@@ -277,8 +282,8 @@ describe("Atomic Booking Holds — Timeline Capacity & Concurrency", () => {
     it("rejects when exit is earlier than entry", () => {
       const parsed = CreateBookingHoldSchema.safeParse({
         ...validPayload,
-        entry_at: "2026-10-28T10:00:00Z",
-        exit_at: "2026-10-25T10:00:00Z",
+        entry_at: futureExitStr,
+        exit_at: futureEntryStr,
       });
       expect(parsed.success).toBe(false);
       if (!parsed.success) {
@@ -290,8 +295,8 @@ describe("Atomic Booking Holds — Timeline Capacity & Concurrency", () => {
     it("rejects duration under 30 minutes", () => {
       const parsed = CreateBookingHoldSchema.safeParse({
         ...validPayload,
-        entry_at: "2026-10-25T10:00:00Z",
-        exit_at: "2026-10-25T10:15:00Z", // 15 mins
+        entry_at: futureEntryStr,
+        exit_at: new Date(futureEntryMs + 15 * 60 * 1000).toISOString(), // 15 mins
       });
       expect(parsed.success).toBe(false);
       if (!parsed.success) {
@@ -303,8 +308,8 @@ describe("Atomic Booking Holds — Timeline Capacity & Concurrency", () => {
     it("rejects duration exceeding 90 days", () => {
       const parsed = CreateBookingHoldSchema.safeParse({
         ...validPayload,
-        entry_at: "2026-10-25T10:00:00Z",
-        exit_at: "2027-02-25T10:00:00Z", // > 90 days
+        entry_at: futureEntryStr,
+        exit_at: new Date(futureEntryMs + 95 * 24 * 60 * 60 * 1000).toISOString(), // > 90 days
       });
       expect(parsed.success).toBe(false);
       if (!parsed.success) {
