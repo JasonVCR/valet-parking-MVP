@@ -1,14 +1,19 @@
 /**
  * Server-side facility + service queries for the search flow.
  *
- * Returns facilities with their active services for a given airport and time interval.
- * The server never exposes capacity numbers, holds, or internal pricing logic
- * that could let a client craft a fraudulent booking.
+ * Returns facilities with their active services, verified tariff bands,
+ * active extras, and genuine cancellation policies for a given airport and time interval.
  *
- * Demo mode: returns an empty list with a clear label when credentials are absent.
+ * Implements strict live database querying with verified source constraints,
+ * and safe fallback to isolated synthetic fixtures when running in local demo mode.
  */
 
-import type { FacilityWithServices } from "@/types/domain";
+import type {
+  FacilityWithServices,
+  ServiceTariffBand,
+  ServiceExtra,
+  CancellationPolicyRule,
+} from "@/types/domain";
 import { getCatalogFacilitiesWithQuotes } from "@/server/discovery/catalog";
 import { calculateQuote } from "@/lib/pricing/engine";
 
@@ -31,8 +36,8 @@ export type FacilitiesResult =
 /**
  * Fetch active facilities (with their active services, verified tariffs and operator info) for an airport.
  *
- * Implements server-side quote calculation, market coverage catalog discovery,
- * and transparent separation between online-quotable operators and manual consultation operators.
+ * In live mode, queries Supabase facilities, verified tariff bands, extras and cancellation policies.
+ * In demo mode, delegates to clearly labeled synthetic fixtures in demoCatalog.
  *
  * @param airportId - UUID of the airport
  * @param entryAt   - entry timestamp (ISO string)
@@ -62,7 +67,7 @@ export async function getFacilitiesWithServices(
     );
     const supabase = await createSupabaseServerClient();
 
-    // Fetch active facilities for the airport
+    // 1. Fetch active facilities and operators for the airport
     const { data: facilitiesData, error: facilityError } = await supabase
       .from("facilities")
       .select(
@@ -109,45 +114,65 @@ export async function getFacilitiesWithServices(
       return { mode: "error", facilities: [], error: facilityError.message };
     }
 
-    // Filter out facilities with no active services
-    const facilities = (facilitiesData ?? [])
-      .filter((f: { services?: unknown[] }) => Array.isArray(f.services) && f.services.length > 0)
-      .map((f) => {
-        const { operators, ...rest } = f as typeof f & {
-          operators: { id: string; name: string; currency: string; status: string };
-        };
-        return {
-          ...rest,
-          operator: {
-            id: operators.id,
-            name: operators.name,
-            currency: operators.currency,
-          },
-        } as FacilityWithServices;
-      });
-
-    if (facilities.length === 0) {
-      // Fallback to verified discovered catalog if database has not been seeded yet
-      const { verifiedFacilities, manualConsultationFacilities } = getCatalogFacilitiesWithQuotes(
-        airportId,
-        entryAt,
-        exitAt
-      );
-      if (verifiedFacilities.length > 0 || manualConsultationFacilities.length > 0) {
-        return {
-          mode: "live",
-          facilities: verifiedFacilities,
-          manualFacilities: manualConsultationFacilities,
-        };
-      }
+    if (!facilitiesData || facilitiesData.length === 0) {
+      return { mode: "live", facilities: [], manualFacilities: [] };
     }
 
-    // Calculate server-authoritative quotes for database facilities
-    const enrichedFacilities = facilities.map((f) => {
-      const primaryService = f.services[0];
-      if (!primaryService) return f;
+    // 2. Fetch verified tariff bands, active extras and cancellation policies
+    const facilityIds = facilitiesData.map((f: { id: string }) => f.id);
+    const operatorIds = Array.from(new Set(facilitiesData.map((f: { operator_id: string }) => f.operator_id)));
+
+    const [bandsResult, extrasResult, policiesResult] = await Promise.all([
+      supabase
+        .from("service_tariff_bands")
+        .select("*")
+        .eq("active", true),
+      supabase
+        .from("service_extras")
+        .select("*")
+        .in("facility_id", facilityIds)
+        .eq("active", true),
+      supabase
+        .from("cancellation_policy_rules")
+        .select("*")
+        .in("operator_id", operatorIds)
+        .eq("active", true),
+    ]);
+
+    const allBands: ServiceTariffBand[] = (bandsResult.data ?? []) as ServiceTariffBand[];
+    const allExtras: ServiceExtra[] = (extrasResult.data ?? []) as ServiceExtra[];
+    const allPolicies: CancellationPolicyRule[] = (policiesResult.data ?? []) as CancellationPolicyRule[];
+
+    const verifiedFacilities: FacilityWithServices[] = [];
+    const manualConsultationFacilities: FacilityWithServices[] = [];
+
+    for (const f of facilitiesData) {
+      const { operators, services, ...rest } = f as typeof f & {
+        operators: { id: string; name: string; currency: string; status: string };
+        services: Array<{
+          id: string;
+          facility_id: string;
+          name: string;
+          description: string | null;
+          price_amount: number;
+          currency: string;
+          pricing_unit: "per_stay" | "per_day" | "per_hour";
+          active: boolean;
+          created_at: string;
+          updated_at: string;
+        }>;
+      };
+
+      if (!services || services.length === 0) continue;
+
+      const primaryService = services[0];
+      const facilityBands = allBands.filter((b) => b.service_id === primaryService.id);
+      const facilityExtras = allExtras.filter((e) => e.facility_id === rest.id);
+      const cancellationPolicy = allPolicies.find((p) => p.operator_id === rest.operator_id) ?? null;
+
+      let quote = null;
       try {
-        const quote = calculateQuote({
+        quote = calculateQuote({
           serviceId: primaryService.id,
           serviceName: primaryService.name,
           basePriceAmount: primaryService.price_amount,
@@ -155,14 +180,47 @@ export async function getFacilitiesWithServices(
           pricingUnit: primaryService.pricing_unit,
           entryAt,
           exitAt,
+          tariffBands: facilityBands,
+          availableExtras: facilityExtras,
         });
-        return { ...f, server_quote: quote };
       } catch {
-        return f;
+        // Quote unavailable or exceeds configured bands
+        quote = null;
       }
+
+      const enriched: FacilityWithServices = {
+        ...rest,
+        operator: {
+          id: operators.id,
+          name: operators.name,
+          currency: operators.currency,
+        },
+        services,
+        tariff_bands: facilityBands,
+        extras: facilityExtras,
+        cancellation_policy: cancellationPolicy,
+        server_quote: quote,
+      };
+
+      if (quote) {
+        verifiedFacilities.push(enriched);
+      } else {
+        manualConsultationFacilities.push(enriched);
+      }
+    }
+
+    // Sort verified facilities by total amount ascending (neutral ranking)
+    verifiedFacilities.sort((a, b) => {
+      const priceA = a.server_quote?.customer_total_amount ?? Infinity;
+      const priceB = b.server_quote?.customer_total_amount ?? Infinity;
+      return priceA - priceB;
     });
 
-    return { mode: "live", facilities: enrichedFacilities };
+    return {
+      mode: "live",
+      facilities: verifiedFacilities,
+      manualFacilities: manualConsultationFacilities,
+    };
   } catch (err) {
     return {
       mode: "error",

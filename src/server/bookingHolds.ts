@@ -51,19 +51,40 @@ export async function createBookingHoldAction(
 
   // 2. Demo Mode Fallback (when local credentials are not configured)
   if (isDemoMode()) {
-    // Deterministic server-side calculation for demo visualization
-    // Never disguised as a persistent database booking
-    const demoQuote = calculateQuote({
-      serviceId: validData.service_id,
-      serviceName: "Servicio Demo AeroValet",
-      basePriceAmount: 1500, // 15.00 EUR per day in minor units
-      currency: "EUR",
-      pricingUnit: "per_day",
-      entryAt: validData.entry_at,
-      exitAt: validData.exit_at,
-      vehicleCategory: validData.vehicle_category ?? "standard",
-      selectedExtras: validData.selected_extras ?? [],
-    });
+    const { SYNTHETIC_DEMO_CATALOG } = await import("@/data/demoCatalog");
+    const demoEntry = SYNTHETIC_DEMO_CATALOG.find((e) => e.facility.id === validData.facility_id);
+    const service = demoEntry?.facility.services.find((s) => s.id === validData.service_id)
+      ?? demoEntry?.facility.services[0]
+      ?? {
+          id: validData.service_id,
+          name: "Servicio Demo Sandbox",
+          price_amount: 1900,
+          currency: "EUR",
+          pricing_unit: "per_day" as const,
+        };
+
+    let demoQuote;
+    try {
+      demoQuote = calculateQuote({
+        serviceId: service.id,
+        serviceName: service.name,
+        basePriceAmount: service.price_amount,
+        currency: service.currency,
+        pricingUnit: service.pricing_unit,
+        entryAt: validData.entry_at,
+        exitAt: validData.exit_at,
+        vehicleCategory: validData.vehicle_category ?? "standard",
+        tariffBands: demoEntry?.tariffBands ?? [],
+        availableExtras: demoEntry?.extras ?? [],
+        selectedExtras: validData.selected_extras ?? [],
+      });
+    } catch (err) {
+      return {
+        success: false,
+        error: err instanceof Error ? err.message : "Error calculando la cotización de la reserva",
+        code: "QUOTE_CALCULATION_ERROR",
+      };
+    }
 
     return {
       success: true,
@@ -71,14 +92,14 @@ export async function createBookingHoldAction(
       hold: {
         hold_id: `demo-hold-${Date.now()}`,
         facility_id: validData.facility_id,
-        service_id: validData.service_id,
+        service_id: service.id,
         entry_at: validData.entry_at,
         exit_at: validData.exit_at,
         status: "active",
         expires_at: new Date(Date.now() + 15 * 60 * 1000).toISOString(),
         price_amount: demoQuote.customer_total_amount,
-        currency: "EUR",
-        pricing_unit: "per_day",
+        currency: demoQuote.currency,
+        pricing_unit: demoQuote.pricing_unit,
         units: demoQuote.units,
         price_snapshot: demoQuote,
       },

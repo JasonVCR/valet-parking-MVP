@@ -45,6 +45,7 @@ export interface PricingEngineInput {
   vehicleCategory?: VehicleCategory | null;
   airportTimezone?: string;
   tariffSource?: TariffSourceMeta | null;
+  b2bCommissionRateBps?: number; // Override default 10% (1000 bps) for testing
 }
 
 /**
@@ -127,12 +128,29 @@ export function calculateQuote(input: PricingEngineInput): PriceSnapshotV3 {
   const durationHours = Math.ceil(durationSeconds / 3600);
   const units = computeBillableUnits(pricingUnit, startDate, endDate);
 
+  // 1. Currency compatibility validation across bands and extras
+  for (const b of tariffBands) {
+    if (b.currency && b.currency !== currency) {
+      throw new Error(
+        `CURRENCY_MISMATCH_TARIFF_BAND: Tariff band '${b.name}' currency (${b.currency}) does not match service currency (${currency})`
+      );
+    }
+  }
+
+  for (const e of availableExtras) {
+    if (e.currency && e.currency !== currency) {
+      throw new Error(
+        `CURRENCY_MISMATCH_EXTRA: Service extra '${e.name}' currency (${e.currency}) does not match service currency (${currency})`
+      );
+    }
+  }
+
   const breakdown: PriceLineBreakdown[] = [];
   const appliedRules: PriceRuleAdjustmentSnapshot[] = [];
   let supplierBaseAmount = 0;
   let matchedTariffSource = tariffSource;
 
-  // 1. Try matching a published fixed Tariff Band
+  // 2. Try matching a published fixed Tariff Band
   const activeBands = tariffBands.filter((b) => {
     if (!b.active || b.service_id !== serviceId) return false;
     if (b.valid_from && new Date(b.valid_from) > startDate) return false;
@@ -165,11 +183,18 @@ export function calculateQuote(input: PricingEngineInput): PriceSnapshotV3 {
       type: "supplier_tariff_band",
     });
   } else if (activeBands.length > 0) {
-    // Check if stay exceeds the highest defined band
+    // Stay duration exceeds maximum configured band
     const sortedBands = [...activeBands].sort((a, b) => b.max_duration_hours - a.max_duration_hours);
     const maxBand = sortedBands[0];
 
     if (durationHours > maxBand.max_duration_hours) {
+      // If service is not daily-priced, do NOT extrapolate an arbitrary rate; quote is unavailable
+      if (pricingUnit !== "per_day") {
+        throw new Error(
+          `QUOTE_UNAVAILABLE_EXCEEDS_BANDS: Stay duration of ${durationHours}h exceeds maximum configured tariff band (${maxBand.max_duration_hours}h) and service pricing unit is '${pricingUnit}'. Manual quotation required.`
+        );
+      }
+
       const extraHours = durationHours - maxBand.max_duration_hours;
       const extraDays = Math.ceil(extraHours / 24);
       const extraDailyRate = basePriceAmount;
@@ -295,47 +320,79 @@ export function calculateQuote(input: PricingEngineInput): PriceSnapshotV3 {
     });
   }
 
-  // Optional requested extras
+  // Strictly validate requested optional extras
   for (const req of selectedExtras) {
-    const extraRecord = availableExtras.find(
-      (e) => e.id === req.extra_id && e.active && !e.is_mandatory && (!e.service_id || e.service_id === serviceId)
-    );
+    const extraRecord = availableExtras.find((e) => e.id === req.extra_id);
 
-    if (extraRecord) {
-      const qty = Math.max(1, Math.min(req.quantity || 1, extraRecord.max_quantity));
-      const cost = extraRecord.pricing_unit === "per_stay"
-        ? extraRecord.price_amount * qty
-        : extraRecord.price_amount * units * qty;
-
-      extrasAmount += cost;
-      selectedExtrasSnapshots.push({
-        extra_id: extraRecord.id,
-        name: extraRecord.name,
-        unit_price_amount: extraRecord.price_amount,
-        pricing_unit: extraRecord.pricing_unit,
-        quantity: qty,
-        total_amount: cost,
-        is_mandatory: false,
-      });
-
-      breakdown.push({
-        label: extraRecord.name,
-        quantity: qty,
-        unit_price: extraRecord.price_amount,
-        total_price: cost,
-        type: "extra",
-      });
+    if (!extraRecord) {
+      throw new Error(`INVALID_EXTRA_SELECTION: Extra with id '${req.extra_id}' not found in available extras`);
     }
+
+    if (!extraRecord.active) {
+      throw new Error(`INVALID_EXTRA_SELECTION: Extra '${extraRecord.name}' is inactive`);
+    }
+
+    if (extraRecord.service_id && extraRecord.service_id !== serviceId) {
+      throw new Error(
+        `INVALID_EXTRA_SELECTION: Extra '${extraRecord.name}' belongs to service '${extraRecord.service_id}', not '${serviceId}'`
+      );
+    }
+
+    if (extraRecord.is_mandatory) {
+      // Mandatory extras are already auto-applied
+      continue;
+    }
+
+    const qty = req.quantity ?? 1;
+    if (qty < 1 || qty > extraRecord.max_quantity) {
+      throw new Error(
+        `INVALID_EXTRA_QUANTITY: Requested quantity ${qty} for extra '${extraRecord.name}' is outside allowed range [1, ${extraRecord.max_quantity}]`
+      );
+    }
+
+    const cost = extraRecord.pricing_unit === "per_stay"
+      ? extraRecord.price_amount * qty
+      : extraRecord.price_amount * units * qty;
+
+    extrasAmount += cost;
+    selectedExtrasSnapshots.push({
+      extra_id: extraRecord.id,
+      name: extraRecord.name,
+      unit_price_amount: extraRecord.price_amount,
+      pricing_unit: extraRecord.pricing_unit,
+      quantity: qty,
+      total_amount: cost,
+      is_mandatory: false,
+    });
+
+    breakdown.push({
+      label: extraRecord.name,
+      quantity: qty,
+      unit_price: extraRecord.price_amount,
+      total_price: cost,
+      type: "extra",
+    });
   }
 
-  // 5. Total Customer Calculation
+  // 6. Total Customer Calculation
   const discountAmount = 0;
-  const taxAmount = 0;
+  const taxAmount = 0; // Tax is 0 pending verified fiscal determination with tax advisory
   const customerTotalAmount =
     supplierBaseAmount + platformMarkupAmount + bookingFeeAmount + extrasAmount - discountAmount + taxAmount;
 
-  // 6. B2B Settlement Calculation (10% B2B commission on operator base only, never on platform charges)
-  const b2bCommissionRateBps = DEFAULT_B2B_COMMISSION_RATE_BPS;
+  // 7. Breakdown Sum Invariant Check: Every cent must be fully accounted for
+  const breakdownSum = breakdown.reduce((sum, item) => sum + item.total_price, 0);
+  if (breakdownSum !== customerTotalAmount) {
+    throw new Error(
+      `PRICE_BREAKDOWN_SUM_MISMATCH: Breakdown sum (${breakdownSum}) does not equal customerTotalAmount (${customerTotalAmount})`
+    );
+  }
+
+  // 8. B2B Settlement Memo with Unified Round Half-Up Policy:
+  // Math.round((supplierBaseAmount * b2bCommissionRateBps) / 10000)
+  // Identical to PostgreSQL: round((v_supplier_base_amount * v_b2b_commission_rate_bps)::numeric / 10000.0)::bigint
+  // For 205 cents at 10% (1000 bps): 205 * 1000 / 10000 = 20.5 -> rounds to 21 cents
+  const b2bCommissionRateBps = input.b2bCommissionRateBps ?? DEFAULT_B2B_COMMISSION_RATE_BPS;
   const b2bCommissionAmount = Math.round((supplierBaseAmount * b2bCommissionRateBps) / 10000);
   const operatorPayoutAmount = supplierBaseAmount - b2bCommissionAmount;
 

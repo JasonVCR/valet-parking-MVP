@@ -1,25 +1,33 @@
 import { describe, it, expect } from "vitest";
 import {
   getCatalogFacilitiesWithQuotes,
-  VERIFIED_DISCOVERED_CATALOG,
+  SYNTHETIC_DEMO_CATALOG,
 } from "@/server/discovery/catalog";
 
-describe("Market Discovery Catalog & Tariff Registry (src/server/discovery/catalog.ts)", () => {
+describe("Synthetic Demo Catalog & Tariff Provenance (src/server/discovery/catalog.ts)", () => {
   const MAD_ID = "a0000000-0000-4000-a000-000000000001";
   const entryAt = "2026-11-01T10:00:00Z";
   const exitAt3d = "2026-11-04T10:00:00Z"; // 72 hours (3 days)
 
-  it("exports verified catalog with at least 3 discovered operators", () => {
-    expect(VERIFIED_DISCOVERED_CATALOG.length).toBeGreaterThanOrEqual(3);
+  it("exports isolated synthetic demo catalog with sandbox transparency tags", () => {
+    expect(SYNTHETIC_DEMO_CATALOG.length).toBeGreaterThanOrEqual(3);
 
-    const published = VERIFIED_DISCOVERED_CATALOG.filter((e) => e.hasPublishedTariff);
-    const manual = VERIFIED_DISCOVERED_CATALOG.filter((e) => !e.hasPublishedTariff);
+    // Every item in demo catalog must be explicitly marked as synthetic fixture
+    for (const entry of SYNTHETIC_DEMO_CATALOG) {
+      expect(entry.isDemoSynthetic).toBe(true);
+      // Sources in demo must be pending_review or sandbox, never unverified 'verified' claims
+      expect(entry.tariffSource.verification_status).toBe("pending_review");
+      expect(entry.facility.name).toContain("Demo");
+    }
+
+    const published = SYNTHETIC_DEMO_CATALOG.filter((e) => e.hasPublishedTariff);
+    const manual = SYNTHETIC_DEMO_CATALOG.filter((e) => !e.hasPublishedTariff);
 
     expect(published.length).toBeGreaterThanOrEqual(2);
     expect(manual.length).toBeGreaterThanOrEqual(1);
   });
 
-  it("calculates authoritative quotes for verified operators in Madrid-Barajas", () => {
+  it("calculates authoritative quotes for sandbox demo operators in Madrid-Barajas", () => {
     const { verifiedFacilities, manualConsultationFacilities } = getCatalogFacilitiesWithQuotes(
       MAD_ID,
       entryAt,
@@ -29,7 +37,7 @@ describe("Market Discovery Catalog & Tariff Registry (src/server/discovery/catal
     expect(verifiedFacilities.length).toBe(2);
     expect(manualConsultationFacilities.length).toBe(1);
 
-    // Each verified facility must have a server_quote V3
+    // Each published facility must have a server_quote V3
     for (const f of verifiedFacilities) {
       expect(f.server_quote).toBeDefined();
       expect(f.server_quote?.calculation_version).toBe(3);
@@ -49,49 +57,49 @@ describe("Market Discovery Catalog & Tariff Registry (src/server/discovery/catal
     expect(manualConsultationFacilities.length).toBe(1);
     const manualOp = manualConsultationFacilities[0];
 
-    expect(manualOp.name).toContain("Iberpark");
+    expect(manualOp.name).toContain("Consulta Manual");
     expect(manualOp.server_quote).toBeNull();
     expect(manualOp.extras).toEqual([]);
     expect(manualOp.tariff_bands).toEqual([]);
   });
 
-  it("applies fixed 3-day weekend band for Valet Barajas Express", () => {
+  it("applies fixed 3-day band for AeroValet Demo Valet (5199 céntimos)", () => {
     const { verifiedFacilities } = getCatalogFacilitiesWithQuotes(
       MAD_ID,
       entryAt,
       exitAt3d
     );
 
-    const valetOp = verifiedFacilities.find((f) => f.id === "fac-mad-valet-01");
+    const valetOp = verifiedFacilities.find((f) => f.id === "demo-fac-valet-01");
     expect(valetOp).toBeDefined();
 
-    // In catalog: 3-day band is 4200 céntimos (42.00 EUR flat)
+    // 3-day band is 4200 céntimos (42.00 EUR flat)
     // Customer total = 4200 + 800 (markup) + 199 (fee) = 5199 céntimos
     expect(valetOp?.server_quote?.supplier_base_amount).toBe(4200);
     expect(valetOp?.server_quote?.customer_total_amount).toBe(5199);
 
     // Provenance details
-    expect(valetOp?.server_quote?.tariff_source?.source_type).toBe("official_website");
-    expect(valetOp?.server_quote?.tariff_source?.source_url).toContain("valetbarajas.es");
+    expect(valetOp?.server_quote?.tariff_source?.verification_status).toBe("pending_review");
+    expect(valetOp?.server_quote?.tariff_source?.source_url).toContain("sandbox.aerovalet.demo");
   });
 
-  it("applies fixed 3-day band for Aeropark Shuttle Barajas", () => {
+  it("applies fixed 3-day band for AeroValet Demo Shuttle (4199 céntimos)", () => {
     const { verifiedFacilities } = getCatalogFacilitiesWithQuotes(
       MAD_ID,
       entryAt,
       exitAt3d
     );
 
-    const shuttleOp = verifiedFacilities.find((f) => f.id === "fac-mad-shuttle-02");
+    const shuttleOp = verifiedFacilities.find((f) => f.id === "demo-fac-shuttle-02");
     expect(shuttleOp).toBeDefined();
 
-    // In catalog: 3-day band is 3200 céntimos (32.00 EUR flat)
+    // 3-day band is 3200 céntimos (32.00 EUR flat)
     // Customer total = 3200 + 800 + 199 = 4199 céntimos
     expect(shuttleOp?.server_quote?.supplier_base_amount).toBe(3200);
     expect(shuttleOp?.server_quote?.customer_total_amount).toBe(4199);
   });
 
-  it("sorts verified facilities in ascending order of customer_total_amount (neutral ranking)", () => {
+  it("sorts facilities in ascending order of customer_total_amount (neutral ranking)", () => {
     const { verifiedFacilities } = getCatalogFacilitiesWithQuotes(
       MAD_ID,
       entryAt,
@@ -102,7 +110,7 @@ describe("Market Discovery Catalog & Tariff Registry (src/server/discovery/catal
     const firstPrice = verifiedFacilities[0].server_quote?.customer_total_amount ?? 0;
     const secondPrice = verifiedFacilities[1].server_quote?.customer_total_amount ?? 0;
 
-    // Aeropark Shuttle (4199) should be first, Valet Barajas Express (5199) second
+    // Demo Shuttle (4199) should be first, Demo Valet (5199) second
     expect(firstPrice).toBeLessThan(secondPrice);
     expect(firstPrice).toBe(4199);
     expect(secondPrice).toBe(5199);
@@ -115,8 +123,8 @@ describe("Market Discovery Catalog & Tariff Registry (src/server/discovery/catal
       exitAt3d
     );
 
-    const valet = verifiedFacilities.find((f) => f.id === "fac-mad-valet-01");
-    const shuttle = verifiedFacilities.find((f) => f.id === "fac-mad-shuttle-02");
+    const valet = verifiedFacilities.find((f) => f.id === "demo-fac-valet-01");
+    const shuttle = verifiedFacilities.find((f) => f.id === "demo-fac-shuttle-02");
 
     expect(valet?.cancellation_policy?.free_cancellation_window_hours).toBe(24);
     expect(shuttle?.cancellation_policy?.free_cancellation_window_hours).toBe(12);

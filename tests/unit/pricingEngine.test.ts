@@ -6,6 +6,23 @@ import {
 } from "@/lib/pricing/engine";
 import type { ServicePriceRule, ServiceExtra, ServiceTariffBand } from "@/types/domain";
 
+// Shared extra definition accessible to all describe blocks
+const washExtra: ServiceExtra = {
+  id: "extra-wash",
+  facility_id: "fac-1",
+  service_id: null,
+  name: "Lavado Completo VIP",
+  description: "Lavado exterior a mano",
+  price_amount: 2500, // 25.00 EUR
+  currency: "EUR",
+  pricing_unit: "per_stay",
+  is_mandatory: false,
+  max_quantity: 1,
+  active: true,
+  created_at: "2026-10-01T00:00:00Z",
+  updated_at: "2026-10-01T00:00:00Z",
+};
+
 describe("Authoritative Pricing Engine V3 (src/lib/pricing/engine.ts)", () => {
   const baseService = {
     serviceId: "srv-0001",
@@ -192,21 +209,6 @@ describe("Authoritative Pricing Engine V3 (src/lib/pricing/engine.ts)", () => {
   });
 
   describe("Service Extras calculation", () => {
-    const washExtra: ServiceExtra = {
-      id: "extra-wash",
-      facility_id: "fac-1",
-      service_id: null,
-      name: "Lavado Completo VIP",
-      description: "Lavado exterior a mano",
-      price_amount: 2500, // 25.00 EUR
-      currency: "EUR",
-      pricing_unit: "per_stay",
-      is_mandatory: false,
-      max_quantity: 1,
-      active: true,
-      created_at: "2026-10-01T00:00:00Z",
-      updated_at: "2026-10-01T00:00:00Z",
-    };
 
     it("adds extras to customer total without inflating B2B commission on platform markup", () => {
       const quote = calculateQuote({
@@ -223,6 +225,278 @@ describe("Authoritative Pricing Engine V3 (src/lib/pricing/engine.ts)", () => {
       expect(quote.customer_total_amount).toBe(6000 + fixedFees + 2500);
       expect(quote.b2b_settlement.commission_basis_amount).toBe(6000);
       expect(quote.b2b_settlement.commission_amount).toBe(600); // 10% strictly of 6000
+    });
+
+    it("rejects non-existent extra with INVALID_EXTRA_SELECTION", () => {
+      expect(() =>
+        calculateQuote({
+          ...baseService,
+          entryAt: futureEntry,
+          exitAt: futureExit3d,
+          availableExtras: [washExtra],
+          selectedExtras: [{ extra_id: "extra-ghost", quantity: 1 }],
+        })
+      ).toThrow("INVALID_EXTRA_SELECTION");
+    });
+
+    it("rejects inactive extra with INVALID_EXTRA_SELECTION", () => {
+      const inactiveExtra: ServiceExtra = {
+        ...washExtra,
+        id: "extra-inactive",
+        active: false,
+      };
+
+      expect(() =>
+        calculateQuote({
+          ...baseService,
+          entryAt: futureEntry,
+          exitAt: futureExit3d,
+          availableExtras: [inactiveExtra],
+          selectedExtras: [{ extra_id: "extra-inactive", quantity: 1 }],
+        })
+      ).toThrow("INVALID_EXTRA_SELECTION");
+    });
+
+    it("rejects extra belonging to a different service with INVALID_EXTRA_SELECTION", () => {
+      const otherServiceExtra: ServiceExtra = {
+        ...washExtra,
+        id: "extra-other-service",
+        service_id: "different-srv-999",
+      };
+
+      expect(() =>
+        calculateQuote({
+          ...baseService,
+          serviceId: "srv-0001",
+          entryAt: futureEntry,
+          exitAt: futureExit3d,
+          availableExtras: [otherServiceExtra],
+          selectedExtras: [{ extra_id: "extra-other-service", quantity: 1 }],
+        })
+      ).toThrow("INVALID_EXTRA_SELECTION");
+    });
+
+    it("rejects extra quantity exceeding max_quantity or less than 1 with INVALID_EXTRA_QUANTITY", () => {
+      expect(() =>
+        calculateQuote({
+          ...baseService,
+          entryAt: futureEntry,
+          exitAt: futureExit3d,
+          availableExtras: [washExtra],
+          selectedExtras: [{ extra_id: "extra-wash", quantity: 2 }],
+        })
+      ).toThrow("INVALID_EXTRA_QUANTITY");
+
+      expect(() =>
+        calculateQuote({
+          ...baseService,
+          entryAt: futureEntry,
+          exitAt: futureExit3d,
+          availableExtras: [washExtra],
+          selectedExtras: [{ extra_id: "extra-wash", quantity: 0 }],
+        })
+      ).toThrow("INVALID_EXTRA_QUANTITY");
+    });
+
+    it("rejects extra with incompatible currency with CURRENCY_MISMATCH_EXTRA", () => {
+      const usdExtra: ServiceExtra = {
+        ...washExtra,
+        id: "extra-usd",
+        currency: "USD",
+      };
+
+      expect(() =>
+        calculateQuote({
+          ...baseService,
+          currency: "EUR",
+          entryAt: futureEntry,
+          exitAt: futureExit3d,
+          availableExtras: [usdExtra],
+          selectedExtras: [{ extra_id: "extra-usd", quantity: 1 }],
+        })
+      ).toThrow("CURRENCY_MISMATCH_EXTRA");
+    });
+  });
+
+  describe("Commission Calculation & Round Half-Up Parity", () => {
+    it("rounds half-up for 205 céntimos base at 10% commission (giving exactly 21 céntimos)", () => {
+      // 205 * 10% = 20.5 céntimos.
+      // Round Half-Up policy yields exactly 21 céntimos.
+      // Operator payout = 205 - 21 = 184 céntimos.
+      const quote = calculateQuote({
+        serviceId: "srv-fraction",
+        serviceName: "Fractional Test Service",
+        basePriceAmount: 205,
+        currency: "EUR",
+        pricingUnit: "per_stay",
+        entryAt: futureEntry,
+        exitAt: futureExit3d,
+        b2bCommissionRateBps: 1000, // 10.00%
+      });
+
+      expect(quote.supplier_base_amount).toBe(205);
+      expect(quote.b2b_settlement.commission_basis_amount).toBe(205);
+      expect(quote.b2b_settlement.commission_amount).toBe(21);
+      expect(quote.b2b_settlement.operator_payout_amount).toBe(184);
+      expect(quote.customer_total_amount).toBe(205 + fixedFees);
+    });
+  });
+
+  describe("Tariff Band Durations (24h, 48h, 72h, 7d) & Excess Protection", () => {
+    const fullDurationBands: ServiceTariffBand[] = [
+      {
+        id: "b-24h",
+        service_id: "srv-0001",
+        source_id: "src-1",
+        name: "Banda 24h",
+        min_duration_hours: 0,
+        max_duration_hours: 24,
+        price_amount: 1500,
+        currency: "EUR",
+        pricing_unit: "flat_stay",
+        vehicle_category: null,
+        valid_from: null,
+        valid_until: null,
+        active: true,
+        created_at: "2026-10-01T00:00:00Z",
+        updated_at: "2026-10-01T00:00:00Z",
+      },
+      {
+        id: "b-48h",
+        service_id: "srv-0001",
+        source_id: "src-1",
+        name: "Banda 48h",
+        min_duration_hours: 25,
+        max_duration_hours: 48,
+        price_amount: 2800,
+        currency: "EUR",
+        pricing_unit: "flat_stay",
+        vehicle_category: null,
+        valid_from: null,
+        valid_until: null,
+        active: true,
+        created_at: "2026-10-01T00:00:00Z",
+        updated_at: "2026-10-01T00:00:00Z",
+      },
+      {
+        id: "b-72h",
+        service_id: "srv-0001",
+        source_id: "src-1",
+        name: "Banda 72h",
+        min_duration_hours: 49,
+        max_duration_hours: 72,
+        price_amount: 3900,
+        currency: "EUR",
+        pricing_unit: "flat_stay",
+        vehicle_category: null,
+        valid_from: null,
+        valid_until: null,
+        active: true,
+        created_at: "2026-10-01T00:00:00Z",
+        updated_at: "2026-10-01T00:00:00Z",
+      },
+      {
+        id: "b-7d",
+        service_id: "srv-0001",
+        source_id: "src-1",
+        name: "Banda 7 Días",
+        min_duration_hours: 73,
+        max_duration_hours: 168,
+        price_amount: 7500,
+        currency: "EUR",
+        pricing_unit: "flat_stay",
+        vehicle_category: null,
+        valid_from: null,
+        valid_until: null,
+        active: true,
+        created_at: "2026-10-01T00:00:00Z",
+        updated_at: "2026-10-01T00:00:00Z",
+      },
+    ];
+
+    it("applies accurate prices for 24h, 48h, 72h, and 7d stays", () => {
+      // 24h
+      const q24 = calculateQuote({
+        ...baseService,
+        entryAt: "2026-11-01T10:00:00Z",
+        exitAt: "2026-11-02T10:00:00Z",
+        tariffBands: fullDurationBands,
+      });
+      expect(q24.supplier_base_amount).toBe(1500);
+
+      // 48h
+      const q48 = calculateQuote({
+        ...baseService,
+        entryAt: "2026-11-01T10:00:00Z",
+        exitAt: "2026-11-03T10:00:00Z",
+        tariffBands: fullDurationBands,
+      });
+      expect(q48.supplier_base_amount).toBe(2800);
+
+      // 72h
+      const q72 = calculateQuote({
+        ...baseService,
+        entryAt: "2026-11-01T10:00:00Z",
+        exitAt: "2026-11-04T10:00:00Z",
+        tariffBands: fullDurationBands,
+      });
+      expect(q72.supplier_base_amount).toBe(3900);
+
+      // 7d (168h)
+      const q7d = calculateQuote({
+        ...baseService,
+        entryAt: "2026-11-01T10:00:00Z",
+        exitAt: "2026-11-08T10:00:00Z",
+        tariffBands: fullDurationBands,
+      });
+      expect(q7d.supplier_base_amount).toBe(7500);
+    });
+
+    it("throws QUOTE_UNAVAILABLE_EXCEEDS_BANDS when stay exceeds maximum band and service is per_stay without daily rate", () => {
+      // 10 days = 240h, exceeding 168h max band, but service pricing_unit is 'per_stay'
+      expect(() =>
+        calculateQuote({
+          ...baseService,
+          pricingUnit: "per_stay",
+          entryAt: "2026-11-01T10:00:00Z",
+          exitAt: "2026-11-11T10:00:00Z",
+          tariffBands: fullDurationBands,
+        })
+      ).toThrow("QUOTE_UNAVAILABLE_EXCEEDS_BANDS");
+    });
+
+    it("rejects tariff bands with mismatched currency with CURRENCY_MISMATCH_TARIFF_BAND", () => {
+      const mismatchedBands: ServiceTariffBand[] = [
+        {
+          ...fullDurationBands[0],
+          currency: "GBP",
+        },
+      ];
+
+      expect(() =>
+        calculateQuote({
+          ...baseService,
+          currency: "EUR",
+          entryAt: "2026-11-01T10:00:00Z",
+          exitAt: "2026-11-02T10:00:00Z",
+          tariffBands: mismatchedBands,
+        })
+      ).toThrow("CURRENCY_MISMATCH_TARIFF_BAND");
+    });
+
+    it("ensures breakdown items sum up exactly to customer_total_amount", () => {
+      const quote = calculateQuote({
+        ...baseService,
+        entryAt: "2026-11-01T10:00:00Z",
+        exitAt: "2026-11-04T10:00:00Z",
+        tariffBands: fullDurationBands,
+        availableExtras: [washExtra],
+        selectedExtras: [{ extra_id: "extra-wash", quantity: 1 }],
+      });
+
+      const lineItemsSum = quote.breakdown.reduce((sum, item) => sum + item.total_price, 0);
+      expect(lineItemsSum).toBe(quote.customer_total_amount);
+      expect(quote.customer_total_amount).toBe(3900 + 800 + 199 + 2500);
     });
   });
 });
