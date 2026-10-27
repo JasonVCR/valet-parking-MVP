@@ -23,6 +23,7 @@ import {
 
 interface SearchResultsProps {
   facilities: FacilityWithServices[];
+  manualFacilities?: FacilityWithServices[];
   airport: Airport | null;
   entryAt: string;
   exitAt: string;
@@ -32,6 +33,7 @@ interface SearchResultsProps {
 
 export function SearchResults({
   facilities,
+  manualFacilities = [],
   airport,
   entryAt,
   exitAt,
@@ -72,8 +74,8 @@ export function SearchResults({
 
     if (sortBy === "price_asc") {
       list.sort((a, b) => {
-        const pA = a.services[0]?.price_amount ?? 0;
-        const pB = b.services[0]?.price_amount ?? 0;
+        const pA = a.server_quote?.customer_total_amount ?? a.services[0]?.price_amount ?? Infinity;
+        const pB = b.server_quote?.customer_total_amount ?? b.services[0]?.price_amount ?? Infinity;
         return pA - pB;
       });
     } else if (sortBy === "name_asc") {
@@ -238,7 +240,7 @@ export function SearchResults({
           <div className="demo-banner mb-6" role="status">
             <span className="demo-icon">🔬</span>
             <div>
-              <strong>Modo demostración activo:</strong> Supabase no está configurado en el entorno local. Por seguridad y transparencia, nunca mostramos disponibilidad inventada como real.
+              <strong>Modo catálogo de mercado activo:</strong> Mostrando tarifas oficiales auditadas con bandas fijas y procedencia verificada. En este entorno demostrativo sin conexión a Supabase de producción, las solicitudes de reserva se gestionan de forma simulada y segura.
             </div>
           </div>
         )}
@@ -347,6 +349,37 @@ export function SearchResults({
                 onSelect={(f) => handleSelectFacility(f)}
               />
             ))}
+          </section>
+        )}
+
+        {/* Manual Consultation Operators Section */}
+        {manualFacilities.length > 0 && (
+          <section className="manual-operators-section" aria-label="Operadores con tarifa bajo consulta">
+            <div className="manual-section-header">
+              <span className="pill-badge pill-slate">Cobertura de Mercado</span>
+              <h2 className="manual-section-title">
+                Operadores identificados sin tarifa digital pública automatizada
+              </h2>
+              <p className="manual-section-sub">
+                Empresas que prestan servicio en el entorno de {airport ? airport.name : "este aeropuerto"} mediante contratación telefónica, flotas corporativas o presupuesto a medida. Por rigor y transparencia, en AeroValet no inventamos tarifas aproximadas.
+              </p>
+            </div>
+
+            <div className="manual-grid">
+              {manualFacilities.map((facility) => (
+                <ParkingCard
+                  key={facility.id}
+                  facility={facility}
+                  entryAt={entryAt}
+                  exitAt={exitAt}
+                  isCompared={comparisonIds.includes(facility.id)}
+                  canCompareMore={comparisonIds.length < 3}
+                  onToggleCompare={handleToggleCompare}
+                  onViewDetails={(f) => setDetailFacility(f)}
+                  onSelect={(f) => handleSelectFacility(f)}
+                />
+              ))}
+            </div>
           </section>
         )}
 

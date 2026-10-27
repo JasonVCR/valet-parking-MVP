@@ -76,7 +76,7 @@ export async function createBookingHoldAction(
         exit_at: validData.exit_at,
         status: "active",
         expires_at: new Date(Date.now() + 15 * 60 * 1000).toISOString(),
-        price_amount: demoQuote.total_amount,
+        price_amount: demoQuote.customer_total_amount,
         currency: "EUR",
         pricing_unit: "per_day",
         units: demoQuote.units,

@@ -1402,6 +1402,120 @@ button {
   background-color: var(--primary-blue-hover);
 }
 
+.operator-header-line {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  margin-bottom: 0.25rem;
+}
+
+.tariff-band-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+  font-size: 0.6875rem;
+  font-weight: 700;
+  color: #4f46e5;
+  background-color: #eef2ff;
+  border: 1px solid #c7d2fe;
+  padding: 0.15rem 0.5rem;
+  border-radius: var(--radius-sm);
+}
+
+.fee-breakdown-subline {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+  font-size: 0.6875rem;
+  color: var(--text-slate-600);
+  margin-top: 0.2rem;
+  font-weight: 500;
+}
+
+.fee-item {
+  background-color: var(--bg-slate-100);
+  padding: 0.1rem 0.35rem;
+  border-radius: 4px;
+}
+
+.fee-item.fee-aerovalet {
+  background-color: #eff6ff;
+  color: var(--primary-blue);
+  font-weight: 600;
+  border: 1px solid #dbeafe;
+}
+
+.fee-sep {
+  color: var(--text-slate-400);
+  font-size: 0.625rem;
+}
+
+.price-consult-text {
+  font-size: 1.25rem !important;
+  color: var(--text-slate-600) !important;
+}
+
+.tariff-provenance-box {
+  background-color: #f8fafc;
+  border: 1px solid var(--border-slate-200);
+  border-radius: var(--radius-lg);
+  padding: 1rem;
+  margin-bottom: 1.25rem;
+}
+
+.provenance-header {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin-bottom: 0.5rem;
+  color: var(--text-slate-800);
+}
+
+.provenance-details p {
+  font-size: 0.75rem;
+  color: var(--text-slate-600);
+  margin-bottom: 0.35rem;
+}
+
+.provenance-badges {
+  display: flex;
+  gap: 0.5rem;
+  margin-top: 0.5rem;
+}
+
+.manual-operators-section {
+  margin-top: 3rem;
+  padding-top: 2rem;
+  border-top: 2px dashed var(--border-slate-200);
+}
+
+.manual-section-header {
+  margin-bottom: 1.5rem;
+}
+
+.manual-section-title {
+  font-size: 1.25rem;
+  font-weight: 800;
+  color: var(--text-slate-900);
+  margin-top: 0.5rem;
+  margin-bottom: 0.35rem;
+}
+
+.manual-section-sub {
+  font-size: 0.875rem;
+  color: var(--text-slate-600);
+  max-width: 48rem;
+  line-height: 1.5;
+}
+
+.manual-grid {
+  display: flex;
+  flex-direction: column;
+  gap: 1.25rem;
+}
+
 /* ─── Empty Results Box ─── */
 .empty-results-box {
   background-color: white;

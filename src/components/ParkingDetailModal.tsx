@@ -32,55 +32,6 @@ interface ParkingDetailModalProps {
   onProceed: (facility: FacilityWithServices, selectedExtras: SelectedExtraInput[]) => void;
 }
 
-// Representative available extras for the facility
-const FACILITY_SAMPLE_EXTRAS: ServiceExtra[] = [
-  {
-    id: "e0000000-0000-4000-c000-000000000001",
-    facility_id: "",
-    service_id: null,
-    name: "Lavado Exterior a Mano",
-    description: "Limpieza integral de carrocería y llantas a mano antes de la entrega",
-    price_amount: 1900, // 19.00 EUR
-    currency: "EUR",
-    pricing_unit: "per_stay",
-    is_mandatory: false,
-    max_quantity: 1,
-    active: true,
-    created_at: "2026-10-01T00:00:00Z",
-    updated_at: "2026-10-01T00:00:00Z",
-  },
-  {
-    id: "e0000000-0000-4000-c000-000000000002",
-    facility_id: "",
-    service_id: null,
-    name: "Recarga Inteligente para Vehículo Eléctrico (VE)",
-    description: "Carga garantizada hasta el 80% o 100% de batería antes de la recogida",
-    price_amount: 2500, // 25.00 EUR
-    currency: "EUR",
-    pricing_unit: "per_stay",
-    is_mandatory: false,
-    max_quantity: 1,
-    active: true,
-    created_at: "2026-10-01T00:00:00Z",
-    updated_at: "2026-10-01T00:00:00Z",
-  },
-  {
-    id: "e0000000-0000-4000-c000-000000000003",
-    facility_id: "",
-    service_id: null,
-    name: "Custodia Segura de Llaves en Caja Fuerte",
-    description: "Almacenamiento blindado con trazabilidad biométrica de operarios",
-    price_amount: 350, // 3.50 EUR
-    currency: "EUR",
-    pricing_unit: "per_stay",
-    is_mandatory: false,
-    max_quantity: 1,
-    active: true,
-    created_at: "2026-10-01T00:00:00Z",
-    updated_at: "2026-10-01T00:00:00Z",
-  },
-];
-
 export function ParkingDetailModal({
   facility,
   entryAt,
@@ -111,7 +62,7 @@ export function ParkingDetailModal({
 
   const primaryService = facility?.services[0];
 
-  // Dynamic Server-authoritative quote calculation
+  // Dynamic Server-authoritative quote calculation with real extras & tariff bands
   const quote = useMemo(() => {
     if (!facility || !primaryService) return null;
 
@@ -129,8 +80,10 @@ export function ParkingDetailModal({
         pricingUnit: primaryService.pricing_unit,
         entryAt,
         exitAt,
-        availableExtras: FACILITY_SAMPLE_EXTRAS,
+        tariffBands: facility.tariff_bands,
+        availableExtras: facility.extras ?? [],
         selectedExtras: selectedInputs,
+        tariffSource: facility.server_quote?.tariff_source,
       });
     } catch {
       return null;
@@ -257,53 +210,98 @@ export function ParkingDetailModal({
                 <div className="breakdown-total-row">
                   <strong>Total final garantizado:</strong>
                   <strong className="total-val">
-                    {formatMoney(quote.total_amount, quote.currency)}
+                    {formatMoney(quote.customer_total_amount, quote.currency)}
                   </strong>
                 </div>
               </div>
             </div>
           )}
 
-          {/* Extras / Add-ons Selector */}
-          <div className="detail-info-block">
-            <h4 className="block-title">Servicios complementarios opcionales (Extras)</h4>
-            <div className="extras-selection-grid">
-              {FACILITY_SAMPLE_EXTRAS.map((extra) => {
-                const isSelected = selectedExtraIds.includes(extra.id);
-                return (
-                  <div
-                    key={extra.id}
-                    onClick={() => handleToggleExtra(extra.id)}
-                    className={`extra-selectable-card ${isSelected ? "selected" : ""}`}
-                    role="checkbox"
-                    aria-checked={isSelected}
-                    tabIndex={0}
-                  >
-                    <div className="extra-checkbox-col">
-                      <input
-                        type="checkbox"
-                        checked={isSelected}
-                        onChange={() => {}} // handled by parent onClick
-                        className="extra-checkbox"
-                        aria-label={`Seleccionar ${extra.name}`}
-                      />
-                    </div>
-                    <div className="extra-info-col">
-                      <div className="extra-top-line">
-                        <span className="extra-name">{extra.name}</span>
-                        <span className="extra-price-tag">
-                          +{formatMoney(extra.price_amount, extra.currency)}
-                        </span>
-                      </div>
-                      {extra.description && (
-                        <p className="extra-desc">{extra.description}</p>
-                      )}
-                    </div>
-                  </div>
-                );
-              })}
+          {/* Tariff Provenance & Source Verification */}
+          {quote?.tariff_source && (
+            <div className="detail-info-block tariff-provenance-box">
+              <div className="provenance-header">
+                <ShieldCheck size={16} className="provenance-icon" />
+                <h4 className="block-title">Procedencia y Verificación de la Tarifa</h4>
+              </div>
+              <div className="provenance-details">
+                <p>
+                  <strong>Fuente oficial:</strong> {quote.tariff_source.source_name} ({quote.tariff_source.source_type})
+                </p>
+                {quote.tariff_source.source_url && (
+                  <p>
+                    <strong>URL verificada:</strong>{" "}
+                    <a
+                      href={quote.tariff_source.source_url}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="link-legal"
+                    >
+                      {quote.tariff_source.source_url}
+                    </a>
+                  </p>
+                )}
+                <p>
+                  <strong>Fecha de captura de tarifa:</strong>{" "}
+                  {new Date(quote.tariff_source.retrieved_at).toLocaleString("es-ES", {
+                    dateStyle: "medium",
+                    timeStyle: "short",
+                  })}
+                </p>
+                <div className="provenance-badges">
+                  <span className="pill-badge pill-emerald">
+                    Estado: {quote.tariff_source.verification_status === "verified" ? "Verificado" : quote.tariff_source.verification_status}
+                  </span>
+                  <span className="pill-badge pill-slate" title="Integridad técnica verificada">
+                    Protocolo SHA-256
+                  </span>
+                </div>
+              </div>
             </div>
-          </div>
+          )}
+
+          {/* Extras / Add-ons Selector */}
+          {facility.extras && facility.extras.length > 0 && (
+            <div className="detail-info-block">
+              <h4 className="block-title">Servicios complementarios opcionales (Extras)</h4>
+              <div className="extras-selection-grid">
+                {facility.extras.map((extra) => {
+                  const isSelected = selectedExtraIds.includes(extra.id);
+                  return (
+                    <div
+                      key={extra.id}
+                      onClick={() => handleToggleExtra(extra.id)}
+                      className={`extra-selectable-card ${isSelected ? "selected" : ""}`}
+                      role="checkbox"
+                      aria-checked={isSelected}
+                      tabIndex={0}
+                    >
+                      <div className="extra-checkbox-col">
+                        <input
+                          type="checkbox"
+                          checked={isSelected}
+                          onChange={() => {}} // handled by parent onClick
+                          className="extra-checkbox"
+                          aria-label={`Seleccionar ${extra.name}`}
+                        />
+                      </div>
+                      <div className="extra-info-col">
+                        <div className="extra-top-line">
+                          <span className="extra-name">{extra.name}</span>
+                          <span className="extra-price-tag">
+                            +{formatMoney(extra.price_amount, extra.currency)}
+                          </span>
+                        </div>
+                        {extra.description && (
+                          <p className="extra-desc">{extra.description}</p>
+                        )}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          )}
 
           {/* Cancellation Policy Banner */}
           <div className="cancellation-policy-card">
@@ -311,20 +309,36 @@ export function ParkingDetailModal({
               <ShieldCheck size={18} className="policy-icon" />
               <h5>Política Oficial de Cancelación y Reembolso</h5>
             </div>
-            <ul className="policy-bullets">
-              <li>
-                <strong>Cancelación gratuita:</strong> 100% de reembolso si se solicita con al menos 24 horas de antelación al inicio del servicio.
-              </li>
-              <li>
-                <strong>Cancelación con aviso inferior a 24h:</strong> Penalización del 50% por bloqueo de plaza; reembolso del 50% restante.
-              </li>
-              <li>
-                <strong>No presentación (No-Show):</strong> Sin reembolso (100% penalización).
-              </li>
-              <li>
-                <strong>Modificaciones de horario:</strong> Gratuitas hasta 2 horas antes de la entrada (según disponibilidad).
-              </li>
-            </ul>
+            {facility.cancellation_policy ? (
+              <ul className="policy-bullets">
+                {facility.cancellation_policy.free_cancellation_window_hours > 0 ? (
+                  <li>
+                    <strong>Cancelación gratuita:</strong> 100% de reembolso si se solicita con al menos {facility.cancellation_policy.free_cancellation_window_hours} horas de antelación al inicio del servicio.
+                  </li>
+                ) : (
+                  <li>
+                    <strong>Sin cancelación gratuita:</strong> El operador no admite devoluciones en esta tarifa.
+                  </li>
+                )}
+                {facility.cancellation_policy.late_cancellation_fee_bps > 0 && (
+                  <li>
+                    <strong>Cancelación con aviso inferior a {facility.cancellation_policy.free_cancellation_window_hours}h:</strong> Penalización del {facility.cancellation_policy.late_cancellation_fee_bps / 100}% por bloqueo de plaza.
+                  </li>
+                )}
+                <li>
+                  <strong>No presentación (No-Show):</strong> Penalización del {facility.cancellation_policy.no_show_fee_bps / 100}% (sin reembolso).
+                </li>
+                {facility.cancellation_policy.allow_modifications && (
+                  <li>
+                    <strong>Modificaciones de horario:</strong> Gratuitas hasta {facility.cancellation_policy.modification_window_hours} horas antes de la entrada (según disponibilidad).
+                  </li>
+                )}
+              </ul>
+            ) : (
+              <p className="policy-desc">
+                Cancelación sujeta a los términos y condiciones particulares del operador.
+              </p>
+            )}
           </div>
 
           {/* Legal Acceptances (Unchecked checkboxes by default) */}
@@ -387,7 +401,7 @@ export function ParkingDetailModal({
           <div className="footer-price-info">
             <span className="footer-price-label">Total de la estancia:</span>
             <span className="footer-price-val">
-              {formatMoney(quote?.total_amount ?? 0, primaryService?.currency ?? facility.operator.currency)}
+              {formatMoney(quote?.customer_total_amount ?? 0, primaryService?.currency ?? facility.operator.currency)}
             </span>
             <span className="footer-price-units">
               ({quote?.units ?? 1} {(quote?.units ?? 1) === 1 ? "unidad" : "unidades"})
@@ -419,6 +433,7 @@ export function ParkingDetailModal({
           </div>
         </div>
       </div>
+
 
       {/* Submodal for Legal Reading */}
       {showTermsModal && (

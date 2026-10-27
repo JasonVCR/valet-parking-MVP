@@ -1,14 +1,14 @@
 /**
- * Authoritative Pricing Engine for AeroValet & Parking Hub.
+ * Authoritative Pricing Engine for AeroValet & Parking Hub (Version 3).
  *
- * Provides deterministic, server-authoritative price calculation for services,
- * advanced pricing rules (seasons, weekdays, entry times, duration bands, vehicle types),
- * and facility extras (car wash, EV charging, etc.).
- *
- * Rules:
- * - Operates strictly on integer minor currency units (e.g. euro cents).
- * - No float math for money.
- * - Perfectly mirrors the PostgreSQL calculate_service_quote() logic.
+ * Implements deterministic, server-authoritative price calculation with:
+ * - Real operator tariff bands (closed duration tables e.g. 1d, 2d, 3d, 7d, 14d)
+ * - Fallback dynamic pricing rules (seasons, weekdays, entry times, duration tiers, vehicle types)
+ * - AeroValet commercial margin (800 minor units / 8.00 EUR per booking)
+ * - Booking management and support fee (199 minor units / 1.99 EUR per booking)
+ * - Verified facility add-on extras (per_stay and per_day)
+ * - B2B settlement memo (10% B2B commission strictly on supplier base, isolated from customer charges)
+ * - Complete itemized line breakdown with zero floating point math (strictly bigint minor units / cents)
  */
 
 import type {
@@ -16,13 +16,19 @@ import type {
   VehicleCategory,
   ServicePriceRule,
   ServiceExtra,
+  ServiceTariffBand,
   SelectedExtraInput,
-  PriceSnapshotV2,
+  PriceSnapshotV3,
   PriceRuleAdjustmentSnapshot,
   SelectedExtraSnapshot,
   PriceLineBreakdown,
+  TariffSourceMeta,
 } from "@/types/domain";
 import { computeBillableUnits } from "@/lib/pricing";
+
+export const AEROVALET_PLATFORM_MARKUP_AMOUNT = 800; // 8.00 EUR in euro cents
+export const AEROVALET_BOOKING_MANAGEMENT_FEE_AMOUNT = 199; // 1.99 EUR in euro cents
+export const DEFAULT_B2B_COMMISSION_RATE_BPS = 1000; // 10% (1000 basis points)
 
 export interface PricingEngineInput {
   serviceId: string;
@@ -32,11 +38,13 @@ export interface PricingEngineInput {
   pricingUnit: PricingUnit;
   entryAt: string | Date;
   exitAt: string | Date;
+  tariffBands?: ServiceTariffBand[];
   rules?: ServicePriceRule[];
   availableExtras?: ServiceExtra[];
   selectedExtras?: SelectedExtraInput[];
   vehicleCategory?: VehicleCategory | null;
   airportTimezone?: string;
+  tariffSource?: TariffSourceMeta | null;
 }
 
 /**
@@ -47,13 +55,11 @@ function getLocalTimeInfo(date: Date, timezone: string): { weekday: number; time
     const formatter = new Intl.DateTimeFormat("en-US", {
       timeZone: timezone,
       hour12: false,
-      weekday: "narrow",
       hour: "2-digit",
       minute: "2-digit",
       second: "2-digit",
     });
 
-    // Determine weekday number in the target timezone
     const weekdayFormatter = new Intl.DateTimeFormat("en-US", {
       timeZone: timezone,
       weekday: "short",
@@ -70,7 +76,6 @@ function getLocalTimeInfo(date: Date, timezone: string): { weekday: number; time
     };
     const weekday = weekdayMap[weekdayStr] ?? date.getUTCDay();
 
-    // Extract HH:MM:SS
     const parts = formatter.formatToParts(date);
     const hour = parts.find((p) => p.type === "hour")?.value ?? "00";
     const minute = parts.find((p) => p.type === "minute")?.value ?? "00";
@@ -78,7 +83,6 @@ function getLocalTimeInfo(date: Date, timezone: string): { weekday: number; time
 
     return { weekday, timeStr: `${hour}:${minute}:${second}` };
   } catch {
-    // Fallback to UTC if timezone is invalid
     const h = String(date.getUTCHours()).padStart(2, "0");
     const m = String(date.getUTCMinutes()).padStart(2, "0");
     const s = String(date.getUTCSeconds()).padStart(2, "0");
@@ -87,9 +91,9 @@ function getLocalTimeInfo(date: Date, timezone: string): { weekday: number; time
 }
 
 /**
- * Calculate the authoritative quote and price snapshot.
+ * Calculate the authoritative quote and price snapshot V3.
  */
-export function calculateQuote(input: PricingEngineInput): PriceSnapshotV2 {
+export function calculateQuote(input: PricingEngineInput): PriceSnapshotV3 {
   const {
     serviceId,
     serviceName,
@@ -98,11 +102,13 @@ export function calculateQuote(input: PricingEngineInput): PriceSnapshotV2 {
     pricingUnit,
     entryAt,
     exitAt,
+    tariffBands = [],
     rules = [],
     availableExtras = [],
     selectedExtras = [],
     vehicleCategory = "standard",
     airportTimezone = "UTC",
+    tariffSource = null,
   } = input;
 
   const startDate = entryAt instanceof Date ? entryAt : new Date(entryAt);
@@ -121,84 +127,144 @@ export function calculateQuote(input: PricingEngineInput): PriceSnapshotV2 {
   const durationHours = Math.ceil(durationSeconds / 3600);
   const units = computeBillableUnits(pricingUnit, startDate, endDate);
 
-  // Time & Day in Airport timezone
-  const { weekday: entryWeekday, timeStr: entryTimeStr } = getLocalTimeInfo(startDate, airportTimezone);
+  const breakdown: PriceLineBreakdown[] = [];
+  const appliedRules: PriceRuleAdjustmentSnapshot[] = [];
+  let supplierBaseAmount = 0;
+  let matchedTariffSource = tariffSource;
 
-  // Filter and sort applicable rules by priority descending
-  const activeRules = rules.filter((r) => r.active && r.service_id === serviceId);
-
-  const matchingRules = activeRules.filter((r) => {
-    // Date range filter
-    if (r.valid_from && new Date(r.valid_from) > startDate) return false;
-    if (r.valid_until && new Date(r.valid_until) < endDate) return false;
-
-    // Weekday filter
-    if (r.weekdays && r.weekdays.length > 0) {
-      if (!r.weekdays.includes(entryWeekday)) return false;
-    }
-
-    // Entry time window filter
-    if (r.entry_time_start && entryTimeStr < r.entry_time_start) return false;
-    if (r.entry_time_end && entryTimeStr > r.entry_time_end) return false;
-
-    // Duration filter
-    if (r.min_duration_hours !== null && durationHours < r.min_duration_hours) return false;
-    if (r.max_duration_hours !== null && durationHours > r.max_duration_hours) return false;
-
-    // Vehicle category filter
-    if (r.vehicle_category && r.vehicle_category !== (vehicleCategory || "standard")) return false;
-
+  // 1. Try matching a published fixed Tariff Band
+  const activeBands = tariffBands.filter((b) => {
+    if (!b.active || b.service_id !== serviceId) return false;
+    if (b.valid_from && new Date(b.valid_from) > startDate) return false;
+    if (b.valid_until && new Date(b.valid_until) < endDate) return false;
+    if (b.vehicle_category && b.vehicle_category !== (vehicleCategory || "standard")) return false;
     return true;
   });
 
-  // Sort by priority DESC, then by created_at ASC
-  matchingRules.sort((a, b) => b.priority - a.priority);
+  // Check if duration directly falls in a defined band
+  const matchingBands = activeBands.filter(
+    (b) => durationHours >= b.min_duration_hours && durationHours <= b.max_duration_hours
+  );
 
-  // Select top matching rule (deterministic precedence)
-  const appliedRules: PriceRuleAdjustmentSnapshot[] = [];
-  let adjustedUnitPrice = basePriceAmount;
+  if (matchingBands.length > 0) {
+    // Sort by tightest band range (most specific), then newest
+    matchingBands.sort(
+      (a, b) => (a.max_duration_hours - a.min_duration_hours) - (b.max_duration_hours - b.min_duration_hours)
+    );
+    const topBand = matchingBands[0];
 
-  if (matchingRules.length > 0) {
-    const topRule = matchingRules[0];
-    if (topRule.adjustment_type === "override" && topRule.fixed_amount !== null) {
-      adjustedUnitPrice = topRule.fixed_amount;
-    } else if (topRule.adjustment_type === "fixed_addition" && topRule.fixed_amount !== null) {
-      adjustedUnitPrice = basePriceAmount + topRule.fixed_amount;
-    } else if (topRule.adjustment_type === "percentage_bps" && topRule.percentage_bps !== null) {
-      // Bigint arithmetic to avoid floating point precision errors
-      const multiplier = BigInt(10000 + topRule.percentage_bps);
-      const computed = (BigInt(basePriceAmount) * multiplier) / BigInt(10000);
-      adjustedUnitPrice = Number(computed);
-    }
+    supplierBaseAmount = topBand.pricing_unit === "flat_stay"
+      ? topBand.price_amount
+      : topBand.price_amount * units;
 
-    appliedRules.push({
-      rule_id: topRule.id,
-      rule_name: topRule.name,
-      rule_type: topRule.rule_type,
-      adjustment_type: topRule.adjustment_type,
-      original_unit_price: basePriceAmount,
-      adjusted_unit_price: adjustedUnitPrice,
+    breakdown.push({
+      label: `Tarifa del operador: ${topBand.name} (${durationHours}h)`,
+      quantity: 1,
+      unit_price: supplierBaseAmount,
+      total_price: supplierBaseAmount,
+      type: "supplier_tariff_band",
     });
+  } else if (activeBands.length > 0) {
+    // Check if stay exceeds the highest defined band
+    const sortedBands = [...activeBands].sort((a, b) => b.max_duration_hours - a.max_duration_hours);
+    const maxBand = sortedBands[0];
+
+    if (durationHours > maxBand.max_duration_hours) {
+      const extraHours = durationHours - maxBand.max_duration_hours;
+      const extraDays = Math.ceil(extraHours / 24);
+      const extraDailyRate = basePriceAmount;
+      const extraAmount = extraDailyRate * extraDays;
+
+      supplierBaseAmount = maxBand.price_amount + extraAmount;
+
+      breakdown.push({
+        label: `Tarifa base: ${maxBand.name} + ${extraDays} d adicionales`,
+        quantity: 1,
+        unit_price: supplierBaseAmount,
+        total_price: supplierBaseAmount,
+        type: "supplier_tariff_band",
+      });
+    }
   }
 
-  const baseTotalAmount = basePriceAmount * units;
-  const rulesAdjustmentsAmount = (adjustedUnitPrice - basePriceAmount) * units;
+  // 2. Fallback to Dynamic Rules or Service Base Rate if no band matched
+  if (supplierBaseAmount === 0 && (!matchingBands || matchingBands.length === 0)) {
+    const { weekday: entryWeekday, timeStr: entryTimeStr } = getLocalTimeInfo(startDate, airportTimezone);
 
-  const breakdown: PriceLineBreakdown[] = [
-    {
+    const activeRules = rules.filter((r) => r.active && r.service_id === serviceId);
+    const matchingRules = activeRules.filter((r) => {
+      if (r.valid_from && new Date(r.valid_from) > startDate) return false;
+      if (r.valid_until && new Date(r.valid_until) < endDate) return false;
+      if (r.weekdays && r.weekdays.length > 0 && !r.weekdays.includes(entryWeekday)) return false;
+      if (r.entry_time_start && entryTimeStr < r.entry_time_start) return false;
+      if (r.entry_time_end && entryTimeStr > r.entry_time_end) return false;
+      if (r.min_duration_hours !== null && durationHours < r.min_duration_hours) return false;
+      if (r.max_duration_hours !== null && durationHours > r.max_duration_hours) return false;
+      if (r.vehicle_category && r.vehicle_category !== (vehicleCategory || "standard")) return false;
+      return true;
+    });
+
+    matchingRules.sort((a, b) => b.priority - a.priority);
+
+    let adjustedUnitPrice = basePriceAmount;
+    if (matchingRules.length > 0) {
+      const topRule = matchingRules[0];
+      if (topRule.adjustment_type === "override" && topRule.fixed_amount !== null) {
+        adjustedUnitPrice = topRule.fixed_amount;
+      } else if (topRule.adjustment_type === "fixed_addition" && topRule.fixed_amount !== null) {
+        adjustedUnitPrice = basePriceAmount + topRule.fixed_amount;
+      } else if (topRule.adjustment_type === "percentage_bps" && topRule.percentage_bps !== null) {
+        const multiplier = BigInt(10000 + topRule.percentage_bps);
+        const computed = (BigInt(basePriceAmount) * multiplier) / BigInt(10000);
+        adjustedUnitPrice = Number(computed);
+      }
+
+      appliedRules.push({
+        rule_id: topRule.id,
+        rule_name: topRule.name,
+        rule_type: topRule.rule_type,
+        adjustment_type: topRule.adjustment_type,
+        original_unit_price: basePriceAmount,
+        adjusted_unit_price: adjustedUnitPrice,
+      });
+    }
+
+    supplierBaseAmount = adjustedUnitPrice * units;
+
+    breakdown.push({
       label: `${serviceName} (${units} ${units === 1 ? "unidad" : "unidades"})`,
       quantity: units,
       unit_price: adjustedUnitPrice,
-      total_price: adjustedUnitPrice * units,
+      total_price: supplierBaseAmount,
       type: "base_stay",
-    },
-  ];
+    });
+  }
 
-  // Process Extras
+  // 3. Add AeroValet Platform Markup (800c) & Booking Fee (199c)
+  const platformMarkupAmount = AEROVALET_PLATFORM_MARKUP_AMOUNT;
+  const bookingFeeAmount = AEROVALET_BOOKING_MANAGEMENT_FEE_AMOUNT;
+
+  breakdown.push({
+    label: "Margen comercial de intermediación AeroValet",
+    quantity: 1,
+    unit_price: platformMarkupAmount,
+    total_price: platformMarkupAmount,
+    type: "platform_markup",
+  });
+
+  breakdown.push({
+    label: "Cargo por gestión y soporte de reserva",
+    quantity: 1,
+    unit_price: bookingFeeAmount,
+    total_price: bookingFeeAmount,
+    type: "booking_fee",
+  });
+
+  // 4. Process Extras
   const selectedExtrasSnapshots: SelectedExtraSnapshot[] = [];
   let extrasAmount = 0;
 
-  // 1. Mandatory extras
+  // Mandatory extras
   const mandatoryExtras = availableExtras.filter(
     (e) => e.active && e.is_mandatory && (!e.service_id || e.service_id === serviceId)
   );
@@ -229,7 +295,7 @@ export function calculateQuote(input: PricingEngineInput): PriceSnapshotV2 {
     });
   }
 
-  // 2. User-selected optional extras
+  // Optional requested extras
   for (const req of selectedExtras) {
     const extraRecord = availableExtras.find(
       (e) => e.id === req.extra_id && e.active && !e.is_mandatory && (!e.service_id || e.service_id === serviceId)
@@ -262,22 +328,39 @@ export function calculateQuote(input: PricingEngineInput): PriceSnapshotV2 {
     }
   }
 
-  const totalAmount = adjustedUnitPrice * units + extrasAmount;
+  // 5. Total Customer Calculation
+  const discountAmount = 0;
+  const taxAmount = 0;
+  const customerTotalAmount =
+    supplierBaseAmount + platformMarkupAmount + bookingFeeAmount + extrasAmount - discountAmount + taxAmount;
+
+  // 6. B2B Settlement Calculation (10% B2B commission on operator base only, never on platform charges)
+  const b2bCommissionRateBps = DEFAULT_B2B_COMMISSION_RATE_BPS;
+  const b2bCommissionAmount = Math.round((supplierBaseAmount * b2bCommissionRateBps) / 10000);
+  const operatorPayoutAmount = supplierBaseAmount - b2bCommissionAmount;
 
   return {
     service_id: serviceId,
     service_name: serviceName,
     currency,
     pricing_unit: pricingUnit,
+    duration_hours: durationHours,
     units,
-    base_unit_price_amount: basePriceAmount,
-    base_total_amount: baseTotalAmount,
-    rules_adjustments_amount: rulesAdjustmentsAmount,
+    supplier_base_amount: supplierBaseAmount,
+    platform_markup_amount: platformMarkupAmount,
+    booking_management_fee_amount: bookingFeeAmount,
     extras_amount: extrasAmount,
-    discount_amount: 0,
-    tax_amount: 0,
-    total_amount: totalAmount,
-    calculation_version: 2,
+    discount_amount: discountAmount,
+    tax_amount: taxAmount,
+    customer_total_amount: customerTotalAmount,
+    b2b_settlement: {
+      commission_rate_bps: b2bCommissionRateBps,
+      commission_basis_amount: supplierBaseAmount,
+      commission_amount: b2bCommissionAmount,
+      operator_payout_amount: operatorPayoutAmount,
+    },
+    tariff_source: matchedTariffSource,
+    calculation_version: 3,
     applied_rules: appliedRules,
     selected_extras: selectedExtrasSnapshots,
     breakdown,

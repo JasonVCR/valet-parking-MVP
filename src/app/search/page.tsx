@@ -93,6 +93,7 @@ async function SearchResultsContent({ searchParams }: SearchPageProps) {
       <Header isDemoMode={facilitiesResult.mode === "demo"} />
       <SearchResults
         facilities={facilitiesResult.facilities}
+        manualFacilities={facilitiesResult.manualFacilities ?? []}
         airport={currentAirport ?? null}
         entryAt={entry_at}
         exitAt={exit_at}

@@ -9,6 +9,8 @@
  */
 
 import type { FacilityWithServices } from "@/types/domain";
+import { getCatalogFacilitiesWithQuotes } from "@/server/discovery/catalog";
+import { calculateQuote } from "@/lib/pricing/engine";
 
 function isDemoMode(): boolean {
   return (
@@ -20,34 +22,38 @@ function isDemoMode(): boolean {
 // ─── Result types ─────────────────────────────────────────────────────────────
 
 export type FacilitiesResult =
-  | { mode: "live"; facilities: FacilityWithServices[] }
-  | { mode: "demo"; facilities: FacilityWithServices[] }
-  | { mode: "error"; facilities: FacilityWithServices[]; error: string };
+  | { mode: "live"; facilities: FacilityWithServices[]; manualFacilities?: FacilityWithServices[] }
+  | { mode: "demo"; facilities: FacilityWithServices[]; manualFacilities?: FacilityWithServices[] }
+  | { mode: "error"; facilities: FacilityWithServices[]; manualFacilities?: FacilityWithServices[]; error: string };
 
 // ─── Queries ──────────────────────────────────────────────────────────────────
 
 /**
- * Fetch active facilities (with their active services and operator info) for an airport.
+ * Fetch active facilities (with their active services, verified tariffs and operator info) for an airport.
  *
- * Note: availability filtering (capacity, holds) happens in the RPC when creating a hold.
- * This query returns which facilities/services exist and are listed; not real-time availability.
+ * Implements server-side quote calculation, market coverage catalog discovery,
+ * and transparent separation between online-quotable operators and manual consultation operators.
  *
  * @param airportId - UUID of the airport
- * @param _entryAt  - entry timestamp (reserved for future service-hours filtering)
- * @param _exitAt   - exit timestamp  (reserved for future service-hours filtering)
+ * @param entryAt   - entry timestamp (ISO string)
+ * @param exitAt    - exit timestamp (ISO string)
  */
 export async function getFacilitiesWithServices(
   airportId: string,
-  _entryAt: string,
-  _exitAt: string
+  entryAt: string,
+  exitAt: string
 ): Promise<FacilitiesResult> {
-  // Reserved for future service-hours and capacity filtering
-  void _entryAt;
-  void _exitAt;
-
   if (isDemoMode()) {
-    // Return empty list; do NOT simulate fake availability
-    return { mode: "demo", facilities: [] };
+    const { verifiedFacilities, manualConsultationFacilities } = getCatalogFacilitiesWithQuotes(
+      airportId,
+      entryAt,
+      exitAt
+    );
+    return {
+      mode: "demo",
+      facilities: verifiedFacilities,
+      manualFacilities: manualConsultationFacilities,
+    };
   }
 
   try {
@@ -120,7 +126,43 @@ export async function getFacilitiesWithServices(
         } as FacilityWithServices;
       });
 
-    return { mode: "live", facilities };
+    if (facilities.length === 0) {
+      // Fallback to verified discovered catalog if database has not been seeded yet
+      const { verifiedFacilities, manualConsultationFacilities } = getCatalogFacilitiesWithQuotes(
+        airportId,
+        entryAt,
+        exitAt
+      );
+      if (verifiedFacilities.length > 0 || manualConsultationFacilities.length > 0) {
+        return {
+          mode: "live",
+          facilities: verifiedFacilities,
+          manualFacilities: manualConsultationFacilities,
+        };
+      }
+    }
+
+    // Calculate server-authoritative quotes for database facilities
+    const enrichedFacilities = facilities.map((f) => {
+      const primaryService = f.services[0];
+      if (!primaryService) return f;
+      try {
+        const quote = calculateQuote({
+          serviceId: primaryService.id,
+          serviceName: primaryService.name,
+          basePriceAmount: primaryService.price_amount,
+          currency: primaryService.currency,
+          pricingUnit: primaryService.pricing_unit,
+          entryAt,
+          exitAt,
+        });
+        return { ...f, server_quote: quote };
+      } catch {
+        return f;
+      }
+    });
+
+    return { mode: "live", facilities: enrichedFacilities };
   } catch (err) {
     return {
       mode: "error",

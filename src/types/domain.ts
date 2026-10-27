@@ -189,7 +189,32 @@ export interface PriceLineBreakdown {
   quantity: number;
   unit_price: number;
   total_price: number;
-  type: "base_stay" | "season_surcharge" | "weekday_adjustment" | "duration_discount" | "extra" | "tax";
+  type:
+    | "base_stay"
+    | "supplier_tariff_band"
+    | "platform_markup"
+    | "booking_fee"
+    | "season_surcharge"
+    | "weekday_adjustment"
+    | "duration_discount"
+    | "extra"
+    | "tax";
+}
+
+export interface B2BSettlementMemo {
+  commission_rate_bps: number; // 1000 = 10%
+  commission_basis_amount: number; // supplier_base_amount
+  commission_amount: number;
+  operator_payout_amount: number;
+}
+
+export interface TariffSourceMeta {
+  source_id: string;
+  source_name: string;
+  source_type: string;
+  source_url?: string | null;
+  retrieved_at: string;
+  verification_status: string;
 }
 
 export interface PriceSnapshotV1 {
@@ -222,7 +247,82 @@ export interface PriceSnapshotV2 {
   breakdown: PriceLineBreakdown[];
 }
 
-export type PriceSnapshot = PriceSnapshotV1 | PriceSnapshotV2;
+export interface PriceSnapshotV3 {
+  service_id: string;
+  service_name: string;
+  currency: string;
+  pricing_unit: PricingUnit;
+  duration_hours: number;
+  units: number;
+  supplier_base_amount: number;
+  platform_markup_amount: number; // 800 céntimos (8.00 EUR)
+  booking_management_fee_amount: number; // 199 céntimos (1.99 EUR)
+  extras_amount: number;
+  discount_amount: number;
+  tax_amount: number;
+  customer_total_amount: number;
+  b2b_settlement: B2BSettlementMemo;
+  tariff_source?: TariffSourceMeta | null;
+  calculation_version: 3;
+  applied_rules: PriceRuleAdjustmentSnapshot[];
+  selected_extras: SelectedExtraSnapshot[];
+  breakdown: PriceLineBreakdown[];
+}
+
+export type PriceSnapshot = PriceSnapshotV1 | PriceSnapshotV2 | PriceSnapshotV3;
+
+// ─── Tariff Sources & Bands ──────────────────────────────────────────────────
+
+export type TariffSourceType =
+  | "official_website"
+  | "operator_tariff_pdf"
+  | "csv_import"
+  | "manual_verified"
+  | "api_feed";
+
+export type TariffAcquisitionMode = "manual" | "csv" | "api" | "web_extraction";
+
+export type TariffVerificationStatus = "verified" | "pending_review" | "flagged_ambiguous" | "stale";
+
+export type TariffBandPricingUnit = "flat_stay" | "per_day";
+
+export interface OperatorTariffSource {
+  id: string;
+  operator_id: string;
+  service_id: string | null;
+  source_name: string;
+  source_url: string | null;
+  source_type: TariffSourceType;
+  acquisition_mode: TariffAcquisitionMode;
+  content_hash: string | null;
+  retrieved_at: string;
+  valid_from: string | null;
+  valid_until: string | null;
+  next_review_at: string | null;
+  verification_status: TariffVerificationStatus;
+  provenance_notes: string | null;
+  raw_payload: Record<string, unknown>;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface ServiceTariffBand {
+  id: string;
+  service_id: string;
+  source_id: string | null;
+  name: string;
+  min_duration_hours: number;
+  max_duration_hours: number;
+  price_amount: number;
+  currency: string;
+  pricing_unit: TariffBandPricingUnit;
+  vehicle_category: VehicleCategory | null;
+  valid_from: string | null;
+  valid_until: string | null;
+  active: boolean;
+  created_at: string;
+  updated_at: string;
+}
 
 // ─── Holds & Bookings ────────────────────────────────────────────────────────
 
@@ -315,6 +415,10 @@ export interface Booking {
 export interface FacilityWithServices extends Facility {
   operator: Pick<Operator, "id" | "name" | "currency">;
   services: Service[];
+  tariff_bands?: ServiceTariffBand[];
+  extras?: ServiceExtra[];
+  cancellation_policy?: CancellationPolicyRule | null;
+  server_quote?: PriceSnapshotV3 | null;
 }
 
 /**
