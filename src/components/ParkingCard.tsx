@@ -118,6 +118,26 @@ export function ParkingCard({
     }
   };
 
+  const isSyntheticDemo =
+    facility.id.startsWith("demo-") ||
+    quote?.tariff_source?.source_type === "synthetic_seed" ||
+    quote?.tariff_source?.source_type === "synthetic_manual";
+
+  const hasOfficialVerifiedTariff =
+    !isSyntheticDemo &&
+    quote?.tariff_source?.verification_status === "verified";
+
+  const allItemNames = [
+    ...facility.services.map((s) => s.name.toLowerCase()),
+    ...(facility.extras?.map((e) => e.name.toLowerCase()) ?? []),
+  ];
+  const hasEvCharge = allItemNames.some((n) =>
+    n.includes("eléctric") || n.includes("electric") || n.includes("carga") || n.includes("recarga") || n.includes("ev")
+  );
+  const hasWash = allItemNames.some((n) =>
+    n.includes("lavado") || n.includes("limpieza") || n.includes("wash")
+  );
+
   return (
     <article
       className={`parking-card ${isCompared ? "card-compared" : ""}`}
@@ -192,28 +212,60 @@ export function ParkingCard({
 
           {/* Highlights & Ratings */}
           <div className="card-meta-row">
-            <div className="verified-status-badge" title="Instalación con control de capacidad en servidor">
-              <ShieldCheck size={13} className="verified-icon" />
-              <span>Plaza verificada</span>
-            </div>
-            {quote?.tariff_source && (
+            {isSyntheticDemo ? (
+              <div className="meta-demo-badge" title="Instalación de demostración en entorno sandbox (datos de prueba)">
+                <Info size={13} />
+                <span>Catálogo Demo</span>
+              </div>
+            ) : (
+              <div className="verified-status-badge" title="Instalación real con capacidad supervisada en servidor">
+                <ShieldCheck size={13} className="verified-icon" />
+                <span>Plaza verificada</span>
+              </div>
+            )}
+
+            {hasOfficialVerifiedTariff ? (
               <>
                 <span className="meta-sep">•</span>
-                <span className="meta-feature meta-source" title={`Tarifa obtenida de fuente oficial (${quote.tariff_source.source_url ?? quote.tariff_source.source_name})`}>
+                <span className="meta-feature meta-source" title={`Tarifa oficial verificada (${quote?.tariff_source?.source_url ?? quote?.tariff_source?.source_name})`}>
                   Tarifa oficial verificada
                 </span>
               </>
+            ) : isSyntheticDemo ? (
+              <>
+                <span className="meta-sep">•</span>
+                <span className="meta-feature meta-demo-source" title="Tarifa simulada con datos sintéticos no contractuales">
+                  Tarifa de demostración (demo)
+                </span>
+              </>
+            ) : (
+              <>
+                <span className="meta-sep">•</span>
+                <span className="meta-feature meta-unverified" title="Tarifa estándar pendiente de verificación oficial">
+                  Tarifa pendiente de verificación
+                </span>
+              </>
             )}
-            <span className="meta-sep">•</span>
-            <span className="meta-feature">
-              <Zap size={13} className="feature-icon" />
-              Carga EV opcional
-            </span>
-            <span className="meta-sep">•</span>
-            <span className="meta-feature">
-              <Sparkles size={13} className="feature-icon" />
-              Lavado disponible
-            </span>
+
+            {hasEvCharge && (
+              <>
+                <span className="meta-sep">•</span>
+                <span className="meta-feature">
+                  <Zap size={13} className="feature-icon" />
+                  Carga EV disponible
+                </span>
+              </>
+            )}
+
+            {hasWash && (
+              <>
+                <span className="meta-sep">•</span>
+                <span className="meta-feature">
+                  <Sparkles size={13} className="feature-icon" />
+                  Lavado disponible
+                </span>
+              </>
+            )}
           </div>
 
           {/* Services list */}

@@ -261,6 +261,7 @@ export interface PriceSnapshotV3 {
   discount_amount: number;
   tax_amount: number;
   customer_total_amount: number;
+  total_amount?: number;
   b2b_settlement: B2BSettlementMemo;
   tariff_source?: TariffSourceMeta | null;
   calculation_version: 3;

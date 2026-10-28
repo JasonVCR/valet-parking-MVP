@@ -1244,6 +1244,27 @@ button {
   border-radius: var(--radius-sm);
 }
 
+.meta-demo-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+  color: #b45309;
+  font-weight: 600;
+  background-color: #fef3c7;
+  padding: 0.15rem 0.45rem;
+  border-radius: var(--radius-sm);
+}
+
+.meta-demo-source {
+  color: #b45309;
+  font-weight: 500;
+}
+
+.meta-unverified {
+  color: var(--text-slate-500);
+  font-style: italic;
+}
+
 .verified-icon {
   color: var(--accent-emerald);
 }

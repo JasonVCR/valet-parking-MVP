@@ -410,6 +410,7 @@ export function calculateQuote(input: PricingEngineInput): PriceSnapshotV3 {
     discount_amount: discountAmount,
     tax_amount: taxAmount,
     customer_total_amount: customerTotalAmount,
+    total_amount: customerTotalAmount,
     b2b_settlement: {
       commission_rate_bps: b2bCommissionRateBps,
       commission_basis_amount: supplierBaseAmount,
