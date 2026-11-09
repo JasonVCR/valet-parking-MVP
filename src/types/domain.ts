@@ -365,6 +365,7 @@ export interface CreateHoldParams {
   guest_phone?: string | null;
   vehicle_category?: VehicleCategory | null;
   selected_extras?: SelectedExtraInput[];
+  expected_total_amount?: number | null; // Optional safeguard against price discrepancies between quote and hold
 }
 
 export interface HoldResult {

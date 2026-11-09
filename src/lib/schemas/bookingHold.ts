@@ -48,6 +48,7 @@ export const createBookingHoldSchema = z
       )
       .optional()
       .default([]),
+    expected_total_amount: z.number().int().min(0).optional().nullable(),
   })
   .superRefine((data, ctx) => {
     const now = Date.now();

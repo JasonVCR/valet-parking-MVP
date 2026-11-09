@@ -86,6 +86,18 @@ export async function createBookingHoldAction(
       };
     }
 
+    if (
+      validData.expected_total_amount !== undefined &&
+      validData.expected_total_amount !== null &&
+      demoQuote.customer_total_amount !== validData.expected_total_amount
+    ) {
+      return {
+        success: false,
+        error: "El precio de la reserva ha cambiado. Por favor, revisa la cotización actualizada.",
+        code: "PRICE_DISCREPANCY",
+      };
+    }
+
     return {
       success: true,
       isDemo: true,
@@ -171,6 +183,23 @@ export async function createBookingHoldAction(
     }
 
     const holdResult = data as HoldResult;
+
+    // Strict price consistency verification: fail if expected total differs from server authoritative hold
+    if (
+      validData.expected_total_amount !== undefined &&
+      validData.expected_total_amount !== null &&
+      holdResult.price_amount !== validData.expected_total_amount
+    ) {
+      console.error(
+        `[PRICE_DISCREPANCY_DETECTED] Hold created with ${holdResult.price_amount} cents but caller expected ${validData.expected_total_amount} cents`
+      );
+      return {
+        success: false,
+        error: "El precio de la reserva ha cambiado. Por favor, revisa la cotización actualizada.",
+        code: "PRICE_DISCREPANCY",
+      };
+    }
+
     return {
       success: true,
       hold: holdResult,

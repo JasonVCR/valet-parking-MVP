@@ -29,7 +29,7 @@ interface ParkingDetailModalProps {
   entryAt: string;
   exitAt: string;
   onClose: () => void;
-  onProceed: (facility: FacilityWithServices, selectedExtras: SelectedExtraInput[]) => void;
+  onProceed: (facility: FacilityWithServices, selectedExtras: SelectedExtraInput[], expectedTotal?: number) => void;
 }
 
 export function ParkingDetailModal({
@@ -113,7 +113,7 @@ export function ParkingDetailModal({
       extra_id: id,
       quantity: 1,
     }));
-    onProceed(facility, selectedInputs);
+    onProceed(facility, selectedInputs, quote?.customer_total_amount);
   };
 
   return (

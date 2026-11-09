@@ -106,7 +106,8 @@ export function SearchResults({
 
   const handleSelectFacility = async (
     facility: FacilityWithServices,
-    selectedExtras?: { extra_id: string; quantity: number }[]
+    selectedExtras?: { extra_id: string; quantity: number }[],
+    expectedTotal?: number
   ) => {
     const srv = facility.services[0];
     if (!srv) {
@@ -126,6 +127,7 @@ export function SearchResults({
         guest_name: "Cliente Invitado",
         guest_email: "cliente.invitado@aerovalet.demo",
         selected_extras: selectedExtras ?? [],
+        expected_total_amount: expectedTotal ?? null,
       });
 
       if (res.success && res.hold) {
@@ -346,7 +348,7 @@ export function SearchResults({
                 canCompareMore={comparisonIds.length < 3}
                 onToggleCompare={handleToggleCompare}
                 onViewDetails={(f) => setDetailFacility(f)}
-                onSelect={(f) => handleSelectFacility(f)}
+                onSelect={(f) => handleSelectFacility(f, undefined, f.server_quote?.customer_total_amount)}
               />
             ))}
           </section>
@@ -417,9 +419,9 @@ export function SearchResults({
           entryAt={entryAt}
           exitAt={exitAt}
           onClose={() => setDetailFacility(null)}
-          onProceed={(f, extras) => {
+          onProceed={(f, extras, expectedTotal) => {
             setDetailFacility(null);
-            handleSelectFacility(f, extras);
+            handleSelectFacility(f, extras, expectedTotal);
           }}
         />
       )}

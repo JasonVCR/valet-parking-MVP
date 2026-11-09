@@ -188,37 +188,33 @@ export async function getFacilitiesWithServices(
 
       let quote = null;
       try {
-        // Authoritative pricing: prefer server PostgreSQL RPC
+        // Authoritative pricing: PostgreSQL RPC is the sole pricing authority in live mode
         const { data: rpcQuote, error: rpcErr } = await supabase.rpc("calculate_service_quote", {
           p_service_id: primaryService.id,
           p_entry_at: entryAt,
           p_exit_at: exitAt,
           p_vehicle_category: null,
           p_selected_extras: [],
-          p_b2b_commission_rate_bps: operators.platform_fee_bps ?? null,
         });
 
-        if (!rpcErr && rpcQuote) {
+        if (rpcErr) {
+          // Log operational error and fail-closed: do NOT fabricate an in-process TS estimate in live mode
+          console.error(
+            `[RPC_QUOTE_FAILURE] Facility ${rest.id} (${rest.name}) Service ${primaryService.id} calculate_service_quote RPC failed:`,
+            rpcErr.message
+          );
+          quote = null;
+        } else if (rpcQuote) {
           quote = rpcQuote;
         } else {
-          // In-process fallback with dynamic rules, timezone and operator commission
-          quote = calculateQuote({
-            serviceId: primaryService.id,
-            serviceName: primaryService.name,
-            basePriceAmount: primaryService.price_amount,
-            currency: primaryService.currency,
-            pricingUnit: primaryService.pricing_unit,
-            entryAt,
-            exitAt,
-            tariffBands: facilityBands,
-            rules: facilityRules,
-            availableExtras: facilityExtras,
-            airportTimezone,
-            b2bCommissionRateBps: operators.platform_fee_bps ?? undefined,
-          });
+          console.warn(
+            `[RPC_QUOTE_EMPTY] Facility ${rest.id} (${rest.name}) Service ${primaryService.id} calculate_service_quote returned empty quote`
+          );
+          quote = null;
         }
-      } catch {
-        // Quote unavailable or exceeds configured bands
+      } catch (err) {
+        // Operational failure: fail-closed to manual consultation
+        console.error(`[RPC_QUOTE_EXCEPTION] Unexpected error querying RPC for facility ${rest.id}:`, err);
         quote = null;
       }
 

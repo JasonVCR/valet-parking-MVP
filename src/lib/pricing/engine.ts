@@ -229,7 +229,13 @@ export function calculateQuote(input: PricingEngineInput): PriceSnapshotV3 {
       return true;
     });
 
-    matchingRules.sort((a, b) => b.priority - a.priority);
+    matchingRules.sort((a, b) => {
+      if (b.priority !== a.priority) return b.priority - a.priority;
+      const dateA = a.created_at ? new Date(a.created_at).getTime() : 0;
+      const dateB = b.created_at ? new Date(b.created_at).getTime() : 0;
+      if (dateA !== dateB) return dateA - dateB;
+      return a.id.localeCompare(b.id);
+    });
 
     let adjustedUnitPrice = basePriceAmount;
     if (matchingRules.length > 0) {
