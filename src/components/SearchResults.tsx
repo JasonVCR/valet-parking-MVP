@@ -9,6 +9,7 @@ import { ComparisonModal } from "./ComparisonModal";
 import { ParkingDetailModal } from "./ParkingDetailModal";
 import { FaqSection } from "./FaqSection";
 import { createBookingHoldAction } from "@/server/bookingHolds";
+import { submitCommercialInquiryAction } from "@/server/commercialInquiries";
 import { formatMoney } from "@/lib/pricing";
 
 import {
@@ -109,11 +110,38 @@ export function SearchResults({
     selectedExtras?: { extra_id: string; quantity: number }[],
     expectedTotal?: number
   ) => {
-    // Audit Requirement 3: Operators under consultation or without verified quote MUST NOT call create_booking_hold
-    if (!facility.server_quote && expectedTotal === undefined) {
-      setBookingNotice(
-        `📋 [Consulta Comercial] La instalación "${facility.name}" no dispone de cotización digital automatizada verificada. Su solicitud ha sido registrada como consulta de presupuesto. Un asesor comercial contactará con usted para confirmar tarifas y disponibilidad.`
-      );
+    // Audit Requirement: Operators under consultation or without verified quote MUST NOT call create_booking_hold
+    const authorizedExpectedTotal = expectedTotal ?? facility.server_quote?.customer_total_amount;
+
+    if (!authorizedExpectedTotal || authorizedExpectedTotal <= 0) {
+      setIsHolding(true);
+      try {
+        const inquiryRes = await submitCommercialInquiryAction({
+          facility_id: facility.id,
+          service_id: facility.services[0]?.id || null,
+          airport_id: facility.airport_id || null,
+          entry_at: entryAt,
+          exit_at: exitAt,
+          contact_name: "Cliente Solicitante",
+          contact_email: "consulta@aerovalet.demo",
+        });
+
+        if (inquiryRes.success && inquiryRes.inquiryId) {
+          setBookingNotice(
+            `📋 [Tarifa Bajo Consulta] La instalación "${facility.name}" requiere cotización comercial manual. Su solicitud de presupuesto ha sido registrada (Ref: ${inquiryRes.inquiryId.slice(0, 16)}). Puede contactar indicando dicha referencia.`
+          );
+        } else {
+          setBookingNotice(
+            `📋 [Tarifa Bajo Consulta] La instalación "${facility.name}" requiere cotización manual directa con el operador.`
+          );
+        }
+      } catch {
+        setBookingNotice(
+          `📋 [Tarifa Bajo Consulta] La instalación "${facility.name}" requiere cotización manual directa.`
+        );
+      } finally {
+        setIsHolding(false);
+      }
       return;
     }
 
@@ -135,7 +163,7 @@ export function SearchResults({
         guest_name: "Cliente Invitado",
         guest_email: "cliente.invitado@aerovalet.demo",
         selected_extras: selectedExtras ?? [],
-        expected_total_amount: expectedTotal ?? null,
+        expected_total_amount: authorizedExpectedTotal,
       });
 
       if (res.success && res.hold) {

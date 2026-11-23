@@ -23,7 +23,7 @@ try {
         & "$pgBin\psql.exe" -p $port -U postgres -d test_aerovalet -v ON_ERROR_STOP=1 -f $m.FullName
         if ($LASTEXITCODE -ne 0) { throw "Migration $($m.Name) failed" }
     }
-    Write-Host "All 9 migrations applied successfully!"
+    Write-Host "All $($migrations.Count) migrations applied successfully!"
 
     Write-Host "Running postgres_permissions.sql..."
     & "$pgBin\psql.exe" -p $port -U postgres -d test_aerovalet -v ON_ERROR_STOP=1 -f "tests/integration/postgres_permissions.sql"
@@ -37,7 +37,11 @@ try {
     & "$pgBin\psql.exe" -p $port -U postgres -d test_aerovalet -v ON_ERROR_STOP=1 -f "tests/integration/postgres_increment8.sql"
     if ($LASTEXITCODE -ne 0) { throw "postgres_increment8.sql failed" }
 
-    Write-Host "ALL POSTGRESQL INTEGRATION TESTS PASSED!"
+    Write-Host "Running test_multi_session_concurrency.ps1..."
+    & "powershell" -ExecutionPolicy Bypass -File "tests/integration/test_multi_session_concurrency.ps1"
+    if ($LASTEXITCODE -ne 0) { throw "test_multi_session_concurrency.ps1 failed" }
+
+    Write-Host "ALL POSTGRESQL INTEGRATION & CONCURRENCY TESTS PASSED!"
 } finally {
     Write-Host "Stopping PostgreSQL..."
     & "$pgBin\pg_ctl.exe" -D $pgData stop

@@ -199,18 +199,27 @@ export async function createBookingHoldAction(
 
     const holdResult = data as HoldResult;
 
-    // Strict price consistency verification: fail if expected total differs from server authoritative hold
-    if (
-      validData.expected_total_amount !== undefined &&
-      validData.expected_total_amount !== null &&
-      holdResult.price_amount !== validData.expected_total_amount
-    ) {
+    // Strict post-RPC defense-in-depth:
+    // If the authoritative hold price somehow differs from expected,
+    // execute an immediate compensating release to guarantee NO orphaned holds or consumed capacity.
+    if (holdResult.price_amount !== validData.expected_total_amount) {
       console.error(
-        `[PRICE_DISCREPANCY_DETECTED] Hold created with ${holdResult.price_amount} cents but caller expected ${validData.expected_total_amount} cents`
+        `[CRITICAL_COMPENSATION] Price discrepancy detected post-RPC: expected=${validData.expected_total_amount}, actual=${holdResult.price_amount}. Releasing hold ${holdResult.hold_id}...`
       );
+      try {
+        await supabase.rpc("release_booking_hold", {
+          p_hold_id: holdResult.hold_id,
+        });
+      } catch (releaseErr) {
+        console.error(
+          `[CRITICAL_LEAK] Failed to execute compensating release for hold ${holdResult.hold_id}:`,
+          releaseErr
+        );
+      }
+
       return {
         success: false,
-        error: "El precio de la reserva ha cambiado. Por favor, revisa la cotización actualizada.",
+        error: "El precio de la reserva ha cambiado. La reserva temporal ha sido liberada de inmediato para evitar bloqueos indebidos.",
         code: "PRICE_DISCREPANCY",
       };
     }

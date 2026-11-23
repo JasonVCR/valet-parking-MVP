@@ -51,7 +51,10 @@ export const createBookingHoldSchema = z
       )
       .optional()
       .default([]),
-    expected_total_amount: z.number().int().min(0).optional().nullable(),
+    expected_total_amount: z
+      .number({ message: "El importe esperado es obligatorio para confirmar la reserva" })
+      .int({ message: "El importe esperado debe ser un número entero de céntimos" })
+      .positive({ message: "El importe esperado debe ser estrictamente positivo (> 0)" }),
   })
   .superRefine((data, ctx) => {
     const now = Date.now();

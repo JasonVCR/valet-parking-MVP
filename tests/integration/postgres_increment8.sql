@@ -116,6 +116,92 @@ BEGIN
 END $$;
 
 -- ═══════════════════════════════════════════════════════════════════════════════
+-- TEST 1.1: Rejection of NULL, Zero, Negative, and Omitted expected_total_amount
+-- ═══════════════════════════════════════════════════════════════════════════════
+DO $$
+DECLARE
+  v_holds_before integer;
+  v_holds_after integer;
+  v_err_null boolean := false;
+  v_err_zero boolean := false;
+  v_err_neg boolean := false;
+  v_err_omit boolean := false;
+BEGIN
+  SELECT count(*) INTO v_holds_before FROM public.booking_holds WHERE facility_id = '44444444-4444-4444-a444-444444444444';
+
+  -- Case A: NULL expected price
+  BEGIN
+    PERFORM public.create_booking_hold(
+      p_facility_id => '44444444-4444-4444-a444-444444444444',
+      p_service_id => '55555555-5555-4555-a555-555555555555',
+      p_entry_at => '2026-11-25T10:00:00Z',
+      p_exit_at => '2026-11-27T10:00:00Z',
+      p_guest_email => 'invalid.price@aerovalet.demo',
+      p_guest_name => 'Invalid Price',
+      p_expected_total_amount => null
+    );
+  EXCEPTION WHEN OTHERS THEN
+    IF SQLERRM LIKE '%INVALID_EXPECTED_PRICE%' THEN v_err_null := true; END IF;
+  END;
+
+  -- Case B: 0 expected price
+  BEGIN
+    PERFORM public.create_booking_hold(
+      p_facility_id => '44444444-4444-4444-a444-444444444444',
+      p_service_id => '55555555-5555-4555-a555-555555555555',
+      p_entry_at => '2026-11-25T10:00:00Z',
+      p_exit_at => '2026-11-27T10:00:00Z',
+      p_guest_email => 'invalid.price@aerovalet.demo',
+      p_guest_name => 'Invalid Price',
+      p_expected_total_amount => 0
+    );
+  EXCEPTION WHEN OTHERS THEN
+    IF SQLERRM LIKE '%INVALID_EXPECTED_PRICE%' THEN v_err_zero := true; END IF;
+  END;
+
+  -- Case C: Negative expected price
+  BEGIN
+    PERFORM public.create_booking_hold(
+      p_facility_id => '44444444-4444-4444-a444-444444444444',
+      p_service_id => '55555555-5555-4555-a555-555555555555',
+      p_entry_at => '2026-11-25T10:00:00Z',
+      p_exit_at => '2026-11-27T10:00:00Z',
+      p_guest_email => 'invalid.price@aerovalet.demo',
+      p_guest_name => 'Invalid Price',
+      p_expected_total_amount => -4999
+    );
+  EXCEPTION WHEN OTHERS THEN
+    IF SQLERRM LIKE '%INVALID_EXPECTED_PRICE%' THEN v_err_neg := true; END IF;
+  END;
+
+  -- Case D: Omitted expected price (default null)
+  BEGIN
+    PERFORM public.create_booking_hold(
+      p_facility_id => '44444444-4444-4444-a444-444444444444',
+      p_service_id => '55555555-5555-4555-a555-555555555555',
+      p_entry_at => '2026-11-25T10:00:00Z',
+      p_exit_at => '2026-11-27T10:00:00Z',
+      p_guest_email => 'invalid.price@aerovalet.demo',
+      p_guest_name => 'Invalid Price'
+    );
+  EXCEPTION WHEN OTHERS THEN
+    IF SQLERRM LIKE '%INVALID_EXPECTED_PRICE%' THEN v_err_omit := true; END IF;
+  END;
+
+  IF NOT (v_err_null AND v_err_zero AND v_err_neg AND v_err_omit) THEN
+    RAISE EXCEPTION 'TEST 1.1 FAILED: Not all invalid expected_total_amount cases were rejected: null=%, zero=%, neg=%, omit=%',
+      v_err_null, v_err_zero, v_err_neg, v_err_omit;
+  END IF;
+
+  SELECT count(*) INTO v_holds_after FROM public.booking_holds WHERE facility_id = '44444444-4444-4444-a444-444444444444';
+  IF v_holds_after != v_holds_before THEN
+    RAISE EXCEPTION 'TEST 1.1 FAILED: A hold was created with an invalid expected_total_amount';
+  END IF;
+
+  RAISE NOTICE 'TEST 1.1 PASSED: NULL, zero, negative, and omitted expected prices are strictly rejected before INSERT';
+END $$;
+
+-- ═══════════════════════════════════════════════════════════════════════════════
 -- TEST 2: Precio coincidente: exactly 1 hold created with 100% price parity
 -- ═══════════════════════════════════════════════════════════════════════════════
 DO $$
@@ -387,6 +473,154 @@ BEGIN
   END IF;
 
   RAISE NOTICE 'TEST 8 PASSED: Exact cent parity across quote, hold, and snapshot (total: % cents)', v_hold_price;
+END $$;
+
+-- ═══════════════════════════════════════════════════════════════════════════════
+-- TEST 9: release_booking_hold RPC (Compensating action releases hold and capacity)
+-- ═══════════════════════════════════════════════════════════════════════════════
+DO $$
+DECLARE
+  v_quote jsonb;
+  v_hold jsonb;
+  v_hold_id uuid;
+  v_released boolean;
+  v_status text;
+BEGIN
+  v_quote := public.calculate_service_quote('55555555-5555-4555-a555-555555555555', '2026-11-26T10:00:00Z', '2026-11-28T10:00:00Z');
+
+  v_hold := public.create_booking_hold(
+    p_facility_id => '44444444-4444-4444-a444-444444444444',
+    p_service_id => '55555555-5555-4555-a555-555555555555',
+    p_entry_at => '2026-11-26T10:00:00Z',
+    p_exit_at => '2026-11-28T10:00:00Z',
+    p_guest_email => 'release.tester@aerovalet.demo',
+    p_guest_name => 'Release Tester',
+    p_expected_total_amount => (v_quote->>'customer_total_amount')::bigint
+  );
+
+  v_hold_id := (v_hold->>'hold_id')::uuid;
+
+  -- Call release_booking_hold
+  v_released := public.release_booking_hold(v_hold_id);
+  IF NOT v_released THEN
+    RAISE EXCEPTION 'TEST 9 FAILED: release_booking_hold returned false';
+  END IF;
+
+  SELECT status INTO v_status FROM public.booking_holds WHERE id = v_hold_id;
+  IF v_status != 'released' THEN
+    RAISE EXCEPTION 'TEST 9 FAILED: Hold status is %, expected released', v_status;
+  END IF;
+
+  DELETE FROM public.booking_holds WHERE id = v_hold_id;
+  RAISE NOTICE 'TEST 9 PASSED: release_booking_hold successfully releases hold and restores capacity';
+END $$;
+
+-- ═══════════════════════════════════════════════════════════════════════════════
+-- TEST 10: Service-Facility Mismatch and Inactive Operator Defense
+-- ═══════════════════════════════════════════════════════════════════════════════
+DO $$
+DECLARE
+  v_err_mismatch boolean := false;
+BEGIN
+  -- Service 55555555-5555-4555-a555-555555555555 belongs to facility 44444444-4444-4444-a444-444444444444.
+  -- We pass foreign facility 44444444-4444-4444-a444-444444444445.
+  BEGIN
+    PERFORM public.calculate_service_quote(
+      p_service_id => '55555555-5555-4555-a555-555555555555',
+      p_entry_at => '2026-11-26T10:00:00Z',
+      p_exit_at => '2026-11-28T10:00:00Z',
+      p_facility_id => '44444444-4444-4444-a444-444444444445'
+    );
+  EXCEPTION WHEN OTHERS THEN
+    IF SQLERRM LIKE '%SERVICE_FACILITY_MISMATCH%' THEN
+      v_err_mismatch := true;
+    END IF;
+  END;
+
+  IF NOT v_err_mismatch THEN
+    RAISE EXCEPTION 'TEST 10 FAILED: SERVICE_FACILITY_MISMATCH was not raised for mismatched facility';
+  END IF;
+
+  RAISE NOTICE 'TEST 10 PASSED: Service-facility mismatch strictly rejected by calculate_service_quote';
+END $$;
+
+-- ═══════════════════════════════════════════════════════════════════════════════
+-- TEST 11: Negative Half-Cent Tie Rounding in SQL (Round Half Away From Zero)
+-- ═══════════════════════════════════════════════════════════════════════════════
+DO $$
+DECLARE
+  v_pos_tie bigint;
+  v_neg_tie bigint;
+BEGIN
+  -- PostgreSQL round(numeric) on exact ties:
+  -- round(20.5::numeric) = 21
+  -- round(-20.5::numeric) = -21
+  v_pos_tie := round((2050 * 100)::numeric / 10000.0)::bigint;
+  v_neg_tie := round((-2050 * 100)::numeric / 10000.0)::bigint;
+
+  IF v_pos_tie != 21 THEN
+    RAISE EXCEPTION 'TEST 11 FAILED: Positive half-cent tie expected 21, got %', v_pos_tie;
+  END IF;
+
+  IF v_neg_tie != -21 THEN
+    RAISE EXCEPTION 'TEST 11 FAILED: Negative half-cent tie expected -21, got %', v_neg_tie;
+  END IF;
+
+  RAISE NOTICE 'TEST 11 PASSED: PostgreSQL Round Half Away From Zero verified for positive (+21) and negative (-21) ties';
+END $$;
+
+-- ═══════════════════════════════════════════════════════════════════════════════
+-- TEST 12: Commercial Inquiries Table Persistence & Idempotency Key
+-- ═══════════════════════════════════════════════════════════════════════════════
+DO $$
+DECLARE
+  v_dup_rejected boolean := false;
+  v_inq_id uuid;
+BEGIN
+  INSERT INTO public.commercial_inquiries (
+    facility_id, service_id, airport_id,
+    entry_at, exit_at,
+    contact_name, contact_email, contact_phone,
+    idempotency_key
+  ) VALUES (
+    '44444444-4444-4444-a444-444444444445',
+    '55555555-5555-4555-a555-555555555556',
+    '11111111-1111-4111-a111-111111111111',
+    '2026-11-26T10:00:00Z',
+    '2026-11-28T10:00:00Z',
+    'Commercial Lead',
+    'lead@aerovalet.demo',
+    '+34600112233',
+    'idemp-key-test-12345678'
+  ) RETURNING id INTO v_inq_id;
+
+  -- Attempt duplicate insert with same idempotency key
+  BEGIN
+    INSERT INTO public.commercial_inquiries (
+      facility_id, service_id, airport_id,
+      entry_at, exit_at,
+      contact_name, contact_email,
+      idempotency_key
+    ) VALUES (
+      '44444444-4444-4444-a444-444444444445',
+      '55555555-5555-4555-a555-555555555556',
+      '11111111-1111-4111-a111-111111111111',
+      '2026-11-26T10:00:00Z',
+      '2026-11-28T10:00:00Z',
+      'Commercial Lead Duplicate',
+      'lead@aerovalet.demo',
+      'idemp-key-test-12345678'
+    );
+  EXCEPTION WHEN unique_violation THEN
+    v_dup_rejected := true;
+  END;
+
+  IF NOT v_dup_rejected THEN
+    RAISE EXCEPTION 'TEST 12 FAILED: Duplicate commercial inquiry was not rejected by unique idempotency_key';
+  END IF;
+
+  DELETE FROM public.commercial_inquiries WHERE id = v_inq_id;
+  RAISE NOTICE 'TEST 12 PASSED: Commercial inquiry persisted and duplicate rejected via idempotency key';
 END $$;
 
 ROLLBACK;

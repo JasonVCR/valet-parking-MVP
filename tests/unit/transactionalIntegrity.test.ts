@@ -1,11 +1,13 @@
-import { describe, it, expect, vi } from "vitest";
+import { describe, it, expect } from "vitest";
 import { calculateQuote } from "@/lib/pricing/engine";
+import { roundHalfAwayFromZero, applyPercentageAdjustment } from "@/lib/pricing/rounding";
 import { createBookingHoldAction } from "@/server/bookingHolds";
 import { getServiceQuoteAction } from "@/server/quotes";
+import { submitCommercialInquiryAction } from "@/server/commercialInquiries";
 import { SYNTHETIC_DEMO_CATALOG } from "@/data/demoCatalog";
 import type { ServicePriceRule } from "@/types/domain";
 
-describe("Increment 8: Transactional Integrity & Unified Quote", () => {
+describe("Increment 8 & 8.1: Transactional Integrity, Hardening & Unified Quote", () => {
   const MAD_ID = "a0000000-0000-4000-a000-000000000001";
   const entryAt = "2026-11-25T10:00:00Z";
   const exitAt2d = "2026-11-27T10:00:00Z"; // 48 hours
@@ -15,7 +17,6 @@ describe("Increment 8: Transactional Integrity & Unified Quote", () => {
 
   describe("1. Atomic Expected Price Validation (Discrepancy Prevention)", () => {
     it("rejects booking hold when expected_total_amount does not match calculated quote", async () => {
-      // Calculate real quote first
       const quote = calculateQuote({
         serviceId: service.id,
         serviceName: service.name,
@@ -45,6 +46,32 @@ describe("Increment 8: Transactional Integrity & Unified Quote", () => {
       expect(res.code).toBe("PRICE_DISCREPANCY");
       expect(res.hold).toBeUndefined();
       expect(res.error).toContain("El precio de la reserva ha cambiado");
+    });
+
+    it("rejects booking hold when expected_total_amount is zero or negative", async () => {
+      const resZero = await createBookingHoldAction({
+        facility_id: demoEntry.facility.id,
+        service_id: service.id,
+        entry_at: entryAt,
+        exit_at: exitAt2d,
+        guest_name: "Zero Tester",
+        guest_email: "zero@aerovalet.demo",
+        expected_total_amount: 0,
+      });
+      expect(resZero.success).toBe(false);
+      expect(resZero.code).toBe("VALIDATION_ERROR");
+
+      const resNeg = await createBookingHoldAction({
+        facility_id: demoEntry.facility.id,
+        service_id: service.id,
+        entry_at: entryAt,
+        exit_at: exitAt2d,
+        guest_name: "Neg Tester",
+        guest_email: "neg@aerovalet.demo",
+        expected_total_amount: -500,
+      });
+      expect(resNeg.success).toBe(false);
+      expect(resNeg.code).toBe("VALIDATION_ERROR");
     });
 
     it("creates booking hold when expected_total_amount matches calculated quote exactly", async () => {
@@ -79,11 +106,14 @@ describe("Increment 8: Transactional Integrity & Unified Quote", () => {
     });
   });
 
-  describe("2. Round Half-Up Policy on Percentage Rules with Fractional Cents", () => {
-    // Simulates PostgreSQL: round((price * (10000 + bps)::numeric) / 10000.0)::bigint
-    function simulateSqlPercentageRule(baseUnitPrice: number, bps: number): number {
-      return Math.round((baseUnitPrice * (10000 + bps)) / 10000);
-    }
+  describe("2. Round Half Away From Zero Policy with Fractional Cents & Negative Ties", () => {
+    it("verifies exact negative half-cent tie: -2050 * 100 / 10000 = -20.5 -> -21 (matching PostgreSQL)", () => {
+      // In JS Math.round(-20.5) returns -20 (rounds towards +infinity).
+      // In PostgreSQL round(-20.5::numeric) returns -21 (rounds away from zero).
+      expect(Math.round(-20.5)).toBe(-20);
+      expect(roundHalfAwayFromZero(BigInt(-205000), BigInt(10000))).toBe(-21);
+      expect(roundHalfAwayFromZero(BigInt(205000), BigInt(10000))).toBe(21);
+    });
 
     it("verifies Half-Up rounding for 2050 cents + 100 bps (+1.00%): 2070.5 -> 2071 cents", () => {
       const rule: ServicePriceRule = {
@@ -119,7 +149,7 @@ describe("Increment 8: Transactional Integrity & Unified Quote", () => {
         rules: [rule],
       });
 
-      const expectedAdjusted = simulateSqlPercentageRule(2050, 100);
+      const expectedAdjusted = applyPercentageAdjustment(2050, 100);
       expect(expectedAdjusted).toBe(2071);
       expect(quote.supplier_base_amount).toBe(2071);
       expect(quote.applied_rules[0].adjusted_unit_price).toBe(2071);
@@ -159,7 +189,7 @@ describe("Increment 8: Transactional Integrity & Unified Quote", () => {
         rules: [rule],
       });
 
-      const expectedAdjusted = simulateSqlPercentageRule(2005, 250);
+      const expectedAdjusted = applyPercentageAdjustment(2005, 250);
       expect(expectedAdjusted).toBe(2055);
       expect(quote.supplier_base_amount).toBe(2055);
     });
@@ -198,12 +228,12 @@ describe("Increment 8: Transactional Integrity & Unified Quote", () => {
         rules: [rule],
       });
 
-      const expectedAdjusted = simulateSqlPercentageRule(2001, 333);
+      const expectedAdjusted = applyPercentageAdjustment(2001, 333);
       expect(expectedAdjusted).toBe(2068);
       expect(quote.supplier_base_amount).toBe(2068);
     });
 
-    it("verifies Half-Up rounding for discount rule -333 bps (-3.33%) on 2001 cents: 1934.3667 -> 1934 cents", () => {
+    it("verifies discount rule -333 bps (-3.33%) on 2001 cents: 1934.3667 -> 1934 cents", () => {
       const rule: ServicePriceRule = {
         id: "rule-halfup-4",
         service_id: "srv-fractional-4",
@@ -237,15 +267,16 @@ describe("Increment 8: Transactional Integrity & Unified Quote", () => {
         rules: [rule],
       });
 
-      const expectedAdjusted = simulateSqlPercentageRule(2001, -333);
+      const expectedAdjusted = applyPercentageAdjustment(2001, -333);
       expect(expectedAdjusted).toBe(1934);
       expect(quote.supplier_base_amount).toBe(1934);
     });
   });
 
-  describe("3. Unified Quote Server Action (getServiceQuoteAction)", () => {
+  describe("3. Unified Quote Server Action Security & Facility Validation", () => {
     it("returns authoritative quote with breakdown in demo mode", async () => {
       const res = await getServiceQuoteAction({
+        facility_id: demoEntry.facility.id,
         service_id: service.id,
         entry_at: entryAt,
         exit_at: exitAt2d,
@@ -263,6 +294,7 @@ describe("Increment 8: Transactional Integrity & Unified Quote", () => {
       const extraPrice = demoEntry.extras[0].price_amount;
 
       const baseRes = await getServiceQuoteAction({
+        facility_id: demoEntry.facility.id,
         service_id: service.id,
         entry_at: entryAt,
         exit_at: exitAt2d,
@@ -270,6 +302,7 @@ describe("Increment 8: Transactional Integrity & Unified Quote", () => {
       });
 
       const extraRes = await getServiceQuoteAction({
+        facility_id: demoEntry.facility.id,
         service_id: service.id,
         entry_at: entryAt,
         exit_at: exitAt2d,
@@ -284,15 +317,29 @@ describe("Increment 8: Transactional Integrity & Unified Quote", () => {
       expect(extraRes.quote!.extras_amount).toBe(extraPrice);
     });
 
-    it("returns error response cleanly when service does not exist", async () => {
+    it("rejects quote when service does not belong to the given facility (SERVICE_FACILITY_MISMATCH)", async () => {
       const res = await getServiceQuoteAction({
-        service_id: "00000000-0000-0000-0000-000000000000",
+        facility_id: "demo-fac-shuttle-02", // Existing facility B
+        service_id: service.id, // Service from demo-fac-valet-01
         entry_at: entryAt,
         exit_at: exitAt2d,
       });
 
       expect(res.success).toBe(false);
-      expect(res.code).toBe("SERVICE_NOT_FOUND");
+      expect(res.code).toBe("SERVICE_FACILITY_MISMATCH");
+      expect(res.quote).toBeUndefined();
+    });
+
+    it("returns error response cleanly when facility does not exist", async () => {
+      const res = await getServiceQuoteAction({
+        facility_id: "00000000-0000-0000-0000-000000000000",
+        service_id: "00000000-0000-0000-0000-000000000001",
+        entry_at: entryAt,
+        exit_at: exitAt2d,
+      });
+
+      expect(res.success).toBe(false);
+      expect(res.code).toBe("FACILITY_NOT_FOUND");
       expect(res.quote).toBeUndefined();
     });
   });
@@ -300,6 +347,7 @@ describe("Increment 8: Transactional Integrity & Unified Quote", () => {
   describe("4. Price Parity across Search, Detail, and Hold", () => {
     it("guarantees search quote customer_total_amount equals booking hold price_amount", async () => {
       const quoteRes = await getServiceQuoteAction({
+        facility_id: demoEntry.facility.id,
         service_id: service.id,
         entry_at: entryAt,
         exit_at: exitAt2d,
@@ -325,6 +373,42 @@ describe("Increment 8: Transactional Integrity & Unified Quote", () => {
       } else {
         expect(snapshot?.total_amount).toBe(authorizedTotal);
       }
+    });
+  });
+
+  describe("5. Commercial Inquiries Real Persistence & Idempotency", () => {
+    it("persists a commercial lead without creating any active booking hold", async () => {
+      const res = await submitCommercialInquiryAction({
+        facility_id: "demo-fac-valet-01",
+        service_id: service.id,
+        airport_id: MAD_ID,
+        entry_at: entryAt,
+        exit_at: exitAt2d,
+        contact_name: "Inquiry Tester",
+        contact_email: "inquiry.test@aerovalet.demo",
+        contact_phone: "+34600112233",
+      });
+
+      expect(res.success).toBe(true);
+      expect(res.inquiryId).toBeDefined();
+      expect(res.inquiryId).toMatch(/^demo-inq-[0-9a-f]+/);
+    });
+
+    it("produces deterministic idempotent keys for duplicate commercial inquiries", async () => {
+      const payload = {
+        facility_id: "demo-fac-valet-01",
+        service_id: service.id,
+        airport_id: MAD_ID,
+        entry_at: entryAt,
+        exit_at: exitAt2d,
+        contact_name: "Duplicate Tester",
+        contact_email: "duplicate@aerovalet.demo",
+      };
+
+      const res1 = await submitCommercialInquiryAction(payload);
+      const res2 = await submitCommercialInquiryAction(payload);
+
+      expect(res1.inquiryId).toBe(res2.inquiryId);
     });
   });
 });

@@ -92,6 +92,7 @@ export function ParkingDetailModal({
     setQuoteError(null);
 
     getServiceQuoteAction({
+      facility_id: facility.id,
       service_id: primaryService.id,
       entry_at: entryAt,
       exit_at: exitAt,

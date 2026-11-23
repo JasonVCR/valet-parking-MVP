@@ -25,6 +25,7 @@ import type {
   TariffSourceMeta,
 } from "@/types/domain";
 import { computeBillableUnits } from "@/lib/pricing";
+import { applyPercentageAdjustment, calculateB2BCommission } from "./rounding";
 
 export const AEROVALET_PLATFORM_MARKUP_AMOUNT = 800; // 8.00 EUR in euro cents
 export const AEROVALET_BOOKING_MANAGEMENT_FEE_AMOUNT = 199; // 1.99 EUR in euro cents
@@ -245,8 +246,8 @@ export function calculateQuote(input: PricingEngineInput): PriceSnapshotV3 {
       } else if (topRule.adjustment_type === "fixed_addition" && topRule.fixed_amount !== null) {
         adjustedUnitPrice = basePriceAmount + topRule.fixed_amount;
       } else if (topRule.adjustment_type === "percentage_bps" && topRule.percentage_bps !== null) {
-        // Round Half-Up Policy: unified with PostgreSQL round((price * (10000 + bps)::numeric) / 10000.0)::bigint
-        adjustedUnitPrice = Math.round((basePriceAmount * (10000 + topRule.percentage_bps)) / 10000);
+        // Round Half Away From Zero: bit-exact parity with PostgreSQL round((price * (10000 + bps)::numeric) / 10000.0)::bigint
+        adjustedUnitPrice = applyPercentageAdjustment(basePriceAmount, topRule.percentage_bps);
       }
 
       appliedRules.push({
@@ -393,12 +394,10 @@ export function calculateQuote(input: PricingEngineInput): PriceSnapshotV3 {
     );
   }
 
-  // 8. B2B Settlement Memo with Unified Round Half-Up Policy:
-  // Math.round((supplierBaseAmount * b2bCommissionRateBps) / 10000)
-  // Identical to PostgreSQL: round((v_supplier_base_amount * v_b2b_commission_rate_bps)::numeric / 10000.0)::bigint
-  // For 205 cents at 10% (1000 bps): 205 * 1000 / 10000 = 20.5 -> rounds to 21 cents
+  // 8. B2B Settlement Memo with Exact Round Half Away From Zero:
+  // bit-exact parity with PostgreSQL: round((v_supplier_base_amount * v_b2b_commission_rate_bps)::numeric / 10000.0)::bigint
   const b2bCommissionRateBps = input.b2bCommissionRateBps ?? DEFAULT_B2B_COMMISSION_RATE_BPS;
-  const b2bCommissionAmount = Math.round((supplierBaseAmount * b2bCommissionRateBps) / 10000);
+  const b2bCommissionAmount = calculateB2BCommission(supplierBaseAmount, b2bCommissionRateBps);
   const operatorPayoutAmount = supplierBaseAmount - b2bCommissionAmount;
 
   return {

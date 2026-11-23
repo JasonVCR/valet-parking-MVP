@@ -38,21 +38,21 @@ INSERT INTO public.facilities (id, operator_id, airport_id, name, address, total
 VALUES ('44444444-4444-4444-a444-444444444444', '33333333-3333-4333-a333-333333333333', '11111111-1111-4111-a111-111111111111', 'Parking VIP T4', 'Terminal 4 Salidas', 50, 5, true)
 ON CONFLICT (id) DO NOTHING;
 
--- Seed Service (price_amount = 2000 cents / 20.00 EUR per day)
-INSERT INTO public.services (id, facility_id, name, description, price_amount, currency, pricing_unit, active)
-VALUES ('55555555-5555-4555-a555-555555555555', '44444444-4444-4444-a444-444444444444', 'Valet Express 24h', 'Entrega en terminal', 2000, 'EUR', 'per_day', true)
-ON CONFLICT (id) DO NOTHING;
-
--- Seed Extra: Wash (1500 cents)
-INSERT INTO public.service_extras (id, facility_id, service_id, name, price_amount, currency, pricing_unit, is_mandatory, max_quantity, active)
-VALUES ('66666666-6666-4666-a666-666666666666', '44444444-4444-4444-a444-444444444444', '55555555-5555-4555-a555-555555555555', 'Lavado Exterior VIP', 1500, 'EUR', 'per_stay', false, 1, true)
-ON CONFLICT (id) DO NOTHING;
-
 -- Seed Tariff Sources
 INSERT INTO public.operator_tariff_sources (id, operator_id, source_name, source_type, source_url, verification_status)
 VALUES 
   ('77777777-7777-4777-a777-777777777771', '33333333-3333-4333-a333-333333333333', 'Web Oficial Verificada', 'official_website', 'https://valettest.es/tarifas', 'verified'),
   ('77777777-7777-4777-a777-777777777772', '33333333-3333-4333-a333-333333333333', 'Tarifa no contrastada', 'manual_verified', 'https://externo.com/tarifas', 'pending_review')
+ON CONFLICT (id) DO NOTHING;
+
+-- Seed Service (price_amount = 2000 cents / 20.00 EUR per day with verified source_id)
+INSERT INTO public.services (id, facility_id, source_id, name, description, price_amount, currency, pricing_unit, active)
+VALUES ('55555555-5555-4555-a555-555555555555', '44444444-4444-4444-a444-444444444444', '77777777-7777-4777-a777-777777777771', 'Valet Express 24h', 'Entrega en terminal', 2000, 'EUR', 'per_day', true)
+ON CONFLICT (id) DO UPDATE SET source_id = '77777777-7777-4777-a777-777777777771';
+
+-- Seed Extra: Wash (1500 cents)
+INSERT INTO public.service_extras (id, facility_id, service_id, name, price_amount, currency, pricing_unit, is_mandatory, max_quantity, active)
+VALUES ('66666666-6666-4666-a666-666666666666', '44444444-4444-4444-a444-444444444444', '55555555-5555-4555-a555-555555555555', 'Lavado Exterior VIP', 1500, 'EUR', 'per_stay', false, 1, true)
 ON CONFLICT (id) DO NOTHING;
 
 -- TEST 1: Base Fallback when no band and no rule exists
@@ -269,9 +269,9 @@ BEGIN
 END $$;
 
 -- TEST 9: B2B Commission Round Half-Up with 205 cents base (10% = 1000 bps)
--- Create temporary service with 205 cents flat stay
-INSERT INTO public.services (id, facility_id, name, price_amount, currency, pricing_unit, active)
-VALUES ('55555555-5555-4555-a555-555555555559', '44444444-4444-4444-a444-444444444444', 'Micro Service', 205, 'EUR', 'per_stay', true);
+-- Create temporary service with 205 cents flat stay with verified source_id
+INSERT INTO public.services (id, facility_id, source_id, name, price_amount, currency, pricing_unit, active)
+VALUES ('55555555-5555-4555-a555-555555555559', '44444444-4444-4444-a444-444444444444', '77777777-7777-4777-a777-777777777771', 'Micro Service', 205, 'EUR', 'per_stay', true);
 
 DO $$
 DECLARE

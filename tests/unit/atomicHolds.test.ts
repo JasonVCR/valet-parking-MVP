@@ -272,11 +272,54 @@ describe("Atomic Booking Holds — Timeline Capacity & Concurrency", () => {
       guest_name: "Carlos Sanchez",
       guest_email: "carlos.sanchez@example.com",
       guest_phone: "+34612345678",
+      expected_total_amount: 5000,
     };
 
     it("validates a compliant guest hold request", () => {
       const parsed = CreateBookingHoldSchema.safeParse(validPayload);
       expect(parsed.success).toBe(true);
+    });
+
+    it("rejects when expected_total_amount is omitted", () => {
+      const { expected_total_amount, ...withoutExpected } = validPayload;
+      const parsed = CreateBookingHoldSchema.safeParse(withoutExpected);
+      expect(parsed.success).toBe(false);
+      if (!parsed.success) {
+        expect(parsed.error.issues.some((i) => i.path.includes("expected_total_amount"))).toBe(true);
+      }
+    });
+
+    it("rejects when expected_total_amount is null", () => {
+      const parsed = CreateBookingHoldSchema.safeParse({
+        ...validPayload,
+        expected_total_amount: null,
+      });
+      expect(parsed.success).toBe(false);
+      if (!parsed.success) {
+        expect(parsed.error.issues.some((i) => i.path.includes("expected_total_amount"))).toBe(true);
+      }
+    });
+
+    it("rejects when expected_total_amount is zero", () => {
+      const parsed = CreateBookingHoldSchema.safeParse({
+        ...validPayload,
+        expected_total_amount: 0,
+      });
+      expect(parsed.success).toBe(false);
+      if (!parsed.success) {
+        expect(parsed.error.issues.some((i) => i.path.includes("expected_total_amount"))).toBe(true);
+      }
+    });
+
+    it("rejects when expected_total_amount is negative", () => {
+      const parsed = CreateBookingHoldSchema.safeParse({
+        ...validPayload,
+        expected_total_amount: -1500,
+      });
+      expect(parsed.success).toBe(false);
+      if (!parsed.success) {
+        expect(parsed.error.issues.some((i) => i.path.includes("expected_total_amount"))).toBe(true);
+      }
     });
 
     it("rejects when exit is earlier than entry", () => {
@@ -335,6 +378,7 @@ describe("Atomic Booking Holds — Timeline Capacity & Concurrency", () => {
         entry_at: validPayload.entry_at,
         exit_at: validPayload.exit_at,
         customer_id: validCustomerId,
+        expected_total_amount: 5000,
       });
       expect(parsed.success).toBe(true);
     });
