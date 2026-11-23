@@ -135,10 +135,25 @@ export async function createBookingHoldAction(
       p_guest_phone: validData.guest_phone ?? null,
       p_vehicle_category: validData.vehicle_category ?? null,
       p_selected_extras: validData.selected_extras ?? [],
+      p_expected_total_amount: validData.expected_total_amount ?? null,
     });
 
     if (error) {
       // Map PostgreSQL custom error codes to user-friendly messages
+      if (error.message.includes("PRICE_DISCREPANCY")) {
+        return {
+          success: false,
+          error: "El precio de la reserva ha cambiado. Por favor, revisa la cotización actualizada.",
+          code: "PRICE_DISCREPANCY",
+        };
+      }
+      if (error.message.includes("NO_VERIFIED_TARIFF_SOURCE")) {
+        return {
+          success: false,
+          error: "No se dispone de tarifa oficial verificada para generar la reserva automática.",
+          code: "NO_VERIFIED_TARIFF_SOURCE",
+        };
+      }
       if (error.message.includes("CAPACITY_EXHAUSTED")) {
         return {
           success: false,

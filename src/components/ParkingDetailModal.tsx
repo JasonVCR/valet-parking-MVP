@@ -1,10 +1,10 @@
 "use client";
 
-import React, { useState, useEffect, useMemo } from "react";
+import React, { useState, useEffect } from "react";
 import Image from "next/image";
-import type { FacilityWithServices, SelectedExtraInput, ServiceExtra } from "@/types/domain";
+import type { FacilityWithServices, SelectedExtraInput, ServiceExtra, PriceSnapshotV3 } from "@/types/domain";
 import { formatMoney } from "@/lib/pricing";
-import { calculateQuote } from "@/lib/pricing/engine";
+import { getServiceQuoteAction } from "@/server/quotes";
 import {
   PLATFORM_TERMS_DOCUMENT,
   PRIVACY_POLICY_DOCUMENT,
@@ -62,32 +62,62 @@ export function ParkingDetailModal({
 
   const primaryService = facility?.services[0];
 
-  // Dynamic Server-authoritative quote calculation with real extras & tariff bands
-  const quote = useMemo(() => {
-    if (!facility || !primaryService) return null;
+  // Server-authoritative quote state
+  const [quote, setQuote] = useState<PriceSnapshotV3 | null>(facility?.server_quote ?? null);
+  const [isQuoteLoading, setIsQuoteLoading] = useState<boolean>(false);
+  const [quoteError, setQuoteError] = useState<string | null>(null);
 
+  // Fetch / recalculate authoritative quote via server action on mount and whenever extras change
+  useEffect(() => {
+    if (!facility || !primaryService) {
+      setQuote(null);
+      return;
+    }
+
+    // Fast path: if no extras selected and server_quote already provided on facility, use it
+    if (selectedExtraIds.length === 0 && facility.server_quote) {
+      setQuote(facility.server_quote);
+      setQuoteError(null);
+      setIsQuoteLoading(false);
+      return;
+    }
+
+    let isMounted = true;
     const selectedInputs: SelectedExtraInput[] = selectedExtraIds.map((id) => ({
       extra_id: id,
       quantity: 1,
     }));
 
-    try {
-      return calculateQuote({
-        serviceId: primaryService.id,
-        serviceName: primaryService.name,
-        basePriceAmount: primaryService.price_amount,
-        currency: primaryService.currency,
-        pricingUnit: primaryService.pricing_unit,
-        entryAt,
-        exitAt,
-        tariffBands: facility.tariff_bands,
-        availableExtras: facility.extras ?? [],
-        selectedExtras: selectedInputs,
-        tariffSource: facility.server_quote?.tariff_source,
+    setIsQuoteLoading(true);
+    setQuoteError(null);
+
+    getServiceQuoteAction({
+      service_id: primaryService.id,
+      entry_at: entryAt,
+      exit_at: exitAt,
+      selected_extras: selectedInputs,
+    })
+      .then((res) => {
+        if (!isMounted) return;
+        setIsQuoteLoading(false);
+        if (res.success && res.quote) {
+          setQuote(res.quote);
+          setQuoteError(null);
+        } else {
+          setQuote(null);
+          setQuoteError(res.error || "No se pudo obtener la cotización autorizada.");
+        }
+      })
+      .catch((err) => {
+        if (!isMounted) return;
+        setIsQuoteLoading(false);
+        setQuote(null);
+        setQuoteError(err instanceof Error ? err.message : "Error inesperado al solicitar cotización.");
       });
-    } catch {
-      return null;
-    }
+
+    return () => {
+      isMounted = false;
+    };
   }, [facility, primaryService, entryAt, exitAt, selectedExtraIds]);
 
   if (!facility) return null;
@@ -107,13 +137,15 @@ export function ParkingDetailModal({
     );
   };
 
+  const canProceed = termsAccepted && privacyAccepted && !isQuoteLoading && !!quote && !quoteError;
+
   const handleProceedClick = () => {
-    if (!termsAccepted || !privacyAccepted) return;
+    if (!canProceed || !quote) return;
     const selectedInputs: SelectedExtraInput[] = selectedExtraIds.map((id) => ({
       extra_id: id,
       quantity: 1,
     }));
-    onProceed(facility, selectedInputs, quote?.customer_total_amount);
+    onProceed(facility, selectedInputs, quote.customer_total_amount);
   };
 
   return (
@@ -195,7 +227,21 @@ export function ParkingDetailModal({
           </div>
 
           {/* Pricing Itemized Breakdown */}
-          {quote && (
+          {isQuoteLoading && (
+            <div className="detail-info-block pricing-breakdown-box" role="status">
+              <h4 className="block-title">Cotización en curso</h4>
+              <p className="loading-quote-text">⏳ Verificando tarifas y calculando cotización en el servidor...</p>
+            </div>
+          )}
+
+          {quoteError && !isQuoteLoading && (
+            <div className="detail-info-block alert-card alert-error" role="alert">
+              <h4 className="block-title">Cotización no disponible</h4>
+              <p>{quoteError}</p>
+            </div>
+          )}
+
+          {quote && !isQuoteLoading && (
             <div className="detail-info-block pricing-breakdown-box">
               <h4 className="block-title">Desglose transparente del precio</h4>
               <div className="breakdown-lines-list">
@@ -401,11 +447,17 @@ export function ParkingDetailModal({
           <div className="footer-price-info">
             <span className="footer-price-label">Total de la estancia:</span>
             <span className="footer-price-val">
-              {formatMoney(quote?.customer_total_amount ?? 0, primaryService?.currency ?? facility.operator.currency)}
+              {isQuoteLoading
+                ? "Calculando..."
+                : quote
+                ? formatMoney(quote.customer_total_amount, primaryService?.currency ?? facility.operator.currency)
+                : "No disponible"}
             </span>
-            <span className="footer-price-units">
-              ({quote?.units ?? 1} {(quote?.units ?? 1) === 1 ? "unidad" : "unidades"})
-            </span>
+            {quote && !isQuoteLoading && (
+              <span className="footer-price-units">
+                ({quote.units} {quote.units === 1 ? "unidad" : "unidades"})
+              </span>
+            )}
           </div>
 
           <div className="footer-actions">
@@ -419,15 +471,21 @@ export function ParkingDetailModal({
             <button
               type="button"
               onClick={handleProceedClick}
-              disabled={!termsAccepted || !privacyAccepted}
-              className={`btn-modal-proceed ${(!termsAccepted || !privacyAccepted) ? "disabled" : ""}`}
+              disabled={!canProceed}
+              className={`btn-modal-proceed ${!canProceed ? "disabled" : ""}`}
               title={
                 !termsAccepted || !privacyAccepted
                   ? "Debe marcar las casillas obligatorias de condiciones y privacidad para continuar"
+                  : isQuoteLoading
+                  ? "Calculando cotización autorizada en el servidor..."
+                  : quoteError
+                  ? quoteError
+                  : !quote
+                  ? "Cotización no disponible"
                   : "Proceder con el bloqueo de plaza en el servidor"
               }
             >
-              <span>Continuar con la reserva</span>
+              <span>{isQuoteLoading ? "Calculando precio..." : "Continuar con la reserva"}</span>
               <ArrowRight size={14} />
             </button>
           </div>

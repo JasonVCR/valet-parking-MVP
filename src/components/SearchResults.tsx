@@ -109,6 +109,14 @@ export function SearchResults({
     selectedExtras?: { extra_id: string; quantity: number }[],
     expectedTotal?: number
   ) => {
+    // Audit Requirement 3: Operators under consultation or without verified quote MUST NOT call create_booking_hold
+    if (!facility.server_quote && expectedTotal === undefined) {
+      setBookingNotice(
+        `📋 [Consulta Comercial] La instalación "${facility.name}" no dispone de cotización digital automatizada verificada. Su solicitud ha sido registrada como consulta de presupuesto. Un asesor comercial contactará con usted para confirmar tarifas y disponibilidad.`
+      );
+      return;
+    }
+
     const srv = facility.services[0];
     if (!srv) {
       setBookingNotice(`La instalación ${facility.name} no cuenta con servicios activos.`);
@@ -405,9 +413,9 @@ export function SearchResults({
           exitAt={exitAt}
           onClose={() => setIsComparisonOpen(false)}
           onRemoveFacility={handleToggleCompare}
-          onSelectFacility={(f) => {
+          onSelectFacility={(f, expectedTotal) => {
             setIsComparisonOpen(false);
-            handleSelectFacility(f);
+            handleSelectFacility(f, undefined, expectedTotal);
           }}
         />
       )}

@@ -10,11 +10,14 @@ import { z } from "zod";
 const MIN_STAY_MS = 30 * 60 * 1_000; // 30 minutes minimum stay
 const MAX_STAY_MS = 90 * 24 * 60 * 60 * 1_000; // 90 days maximum stay
 
+const isValidId = (val: string) =>
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(val) ||
+  /^demo-[a-z0-9-]+$/i.test(val);
 
 export const createBookingHoldSchema = z
   .object({
-    facility_id: z.string().uuid({ message: "Identificador de instalación no válido" }),
-    service_id: z.string().uuid({ message: "Identificador de servicio no válido" }),
+    facility_id: z.string().refine(isValidId, { message: "Identificador de instalación no válido" }),
+    service_id: z.string().refine(isValidId, { message: "Identificador de servicio no válido" }),
     entry_at: z.string().datetime({ message: "Fecha de entrada no válida" }),
     exit_at: z.string().datetime({ message: "Fecha de salida no válida" }),
     vehicle_id: z.string().uuid().nullable().optional(),
@@ -42,7 +45,7 @@ export const createBookingHoldSchema = z
     selected_extras: z
       .array(
         z.object({
-          extra_id: z.string().uuid({ message: "Identificador de extra no válido" }),
+          extra_id: z.string().refine(isValidId, { message: "Identificador de extra no válido" }),
           quantity: z.number().int().min(1).max(10).default(1),
         })
       )

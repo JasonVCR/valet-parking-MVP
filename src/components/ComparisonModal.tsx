@@ -25,7 +25,7 @@ interface ComparisonModalProps {
   exitAt: string;
   onClose: () => void;
   onRemoveFacility: (id: string) => void;
-  onSelectFacility: (facility: FacilityWithServices) => void;
+  onSelectFacility: (facility: FacilityWithServices, expectedTotal?: number) => void;
 }
 
 export function ComparisonModal({
@@ -141,31 +141,29 @@ export function ComparisonModal({
                   })}
                 </tr>
 
-                {/* Total Price (server-calculated cents) */}
+                {/* Total Price (server-authorized cents or manual consultation) */}
                 <tr className="highlight-row">
-                  <td className="td-label">Precio total estimado</td>
+                  <td className="td-label">Precio total garantizado</td>
                   {facilities.map((f) => {
-                    const srv = f.services[0];
-                    let total = srv ? srv.price_amount : 0;
-                    let units = 1;
-                    if (srv) {
-                      try {
-                        units = computeBillableUnits(srv.pricing_unit, entryAt, exitAt);
-                        total = computeTotalAmount(srv.price_amount, units);
-                      } catch {
-                        // fallback
-                      }
-                    }
+                    const quote = f.server_quote;
                     return (
                       <td key={f.id} className="td-val">
-                        <div className="table-price-box">
-                          <span className="table-price-amount">
-                            {formatMoney(total, srv?.currency ?? f.operator.currency)}
-                          </span>
-                          <span className="table-price-sub">
-                            ({units} {units === 1 ? "unidad" : "unidades"})
-                          </span>
-                        </div>
+                        {quote ? (
+                          <div className="table-price-box">
+                            <span className="table-price-amount">
+                              {formatMoney(quote.customer_total_amount, quote.currency)}
+                            </span>
+                            <span className="table-price-sub">
+                              ({quote.units} {quote.units === 1 ? "unidad" : "unidades"})
+                            </span>
+                            <span className="price-verified-hint">Autorizado en servidor</span>
+                          </div>
+                        ) : (
+                          <div className="table-price-box">
+                            <span className="table-price-amount price-consult-text">Bajo consulta</span>
+                            <span className="table-price-sub">Sin tarifa digital</span>
+                          </div>
+                        )}
                       </td>
                     );
                   })}
@@ -232,21 +230,25 @@ export function ComparisonModal({
                   ))}
                 </tr>
 
-                {/* Select CTA */}
+                {/* Select / Consult CTA */}
                 <tr>
                   <td className="td-label">Acción</td>
-                  {facilities.map((f) => (
-                    <td key={f.id} className="td-val">
-                      <button
-                        type="button"
-                        onClick={() => onSelectFacility(f)}
-                        className="btn-select-table"
-                      >
-                        <span>Seleccionar</span>
-                        <ArrowRight size={13} />
-                      </button>
-                    </td>
-                  ))}
+                  {facilities.map((f) => {
+                    const quote = f.server_quote;
+                    return (
+                      <td key={f.id} className="td-val">
+                        <button
+                          type="button"
+                          onClick={() => onSelectFacility(f, quote?.customer_total_amount)}
+                          className={`btn-select-table ${!quote ? "btn-consult-table" : ""}`}
+                          aria-label={`${quote ? "Seleccionar" : "Consultar"} ${f.name}`}
+                        >
+                          <span>{quote ? "Seleccionar" : "Consultar"}</span>
+                          <ArrowRight size={13} />
+                        </button>
+                      </td>
+                    );
+                  })}
                 </tr>
               </tbody>
             </table>

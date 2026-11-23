@@ -245,9 +245,8 @@ export function calculateQuote(input: PricingEngineInput): PriceSnapshotV3 {
       } else if (topRule.adjustment_type === "fixed_addition" && topRule.fixed_amount !== null) {
         adjustedUnitPrice = basePriceAmount + topRule.fixed_amount;
       } else if (topRule.adjustment_type === "percentage_bps" && topRule.percentage_bps !== null) {
-        const multiplier = BigInt(10000 + topRule.percentage_bps);
-        const computed = (BigInt(basePriceAmount) * multiplier) / BigInt(10000);
-        adjustedUnitPrice = Number(computed);
+        // Round Half-Up Policy: unified with PostgreSQL round((price * (10000 + bps)::numeric) / 10000.0)::bigint
+        adjustedUnitPrice = Math.round((basePriceAmount * (10000 + topRule.percentage_bps)) / 10000);
       }
 
       appliedRules.push({

@@ -90,6 +90,7 @@ export interface Facility {
 export interface Service {
   id: string;
   facility_id: string;
+  source_id?: string | null;
   name: string;
   description: string | null;
   /** Integer in minor currency units (e.g. euro cents). Never a float. */
@@ -104,6 +105,7 @@ export interface Service {
 export interface ServicePriceRule {
   id: string;
   service_id: string;
+  source_id?: string | null;
   name: string;
   rule_type: PriceRuleType;
   priority: number;

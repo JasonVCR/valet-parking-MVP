@@ -77,8 +77,8 @@ BEGIN
 END $$;
 
 -- TEST 2: Dynamic Rule - Override
-INSERT INTO public.service_price_rules (id, service_id, name, rule_type, priority, adjustment_type, fixed_amount, active)
-VALUES ('88888888-8888-4888-a888-888888888881', '55555555-5555-4555-a555-555555555555', 'Promo Override', 'season', 10, 'override', 1500, true);
+INSERT INTO public.service_price_rules (id, service_id, source_id, name, rule_type, priority, adjustment_type, fixed_amount, active)
+VALUES ('88888888-8888-4888-a888-888888888881', '55555555-5555-4555-a555-555555555555', '77777777-7777-4777-a777-777777777771', 'Promo Override', 'season', 10, 'override', 1500, true);
 
 DO $$
 DECLARE
@@ -102,8 +102,8 @@ END $$;
 DELETE FROM public.service_price_rules WHERE id = '88888888-8888-4888-a888-888888888881';
 
 -- TEST 3: Dynamic Rule - Fixed Addition
-INSERT INTO public.service_price_rules (id, service_id, name, rule_type, priority, adjustment_type, fixed_amount, active)
-VALUES ('88888888-8888-4888-a888-888888888882', '55555555-5555-4555-a555-555555555555', 'Suplemento Fin de Semana', 'weekday', 10, 'fixed_addition', 500, true);
+INSERT INTO public.service_price_rules (id, service_id, source_id, name, rule_type, priority, adjustment_type, fixed_amount, active)
+VALUES ('88888888-8888-4888-a888-888888888882', '55555555-5555-4555-a555-555555555555', '77777777-7777-4777-a777-777777777771', 'Suplemento Fin de Semana', 'weekday', 10, 'fixed_addition', 500, true);
 
 DO $$
 DECLARE
@@ -127,8 +127,8 @@ END $$;
 DELETE FROM public.service_price_rules WHERE id = '88888888-8888-4888-a888-888888888882';
 
 -- TEST 4: Dynamic Rule - Percentage BPS (+20% = +2000 bps)
-INSERT INTO public.service_price_rules (id, service_id, name, rule_type, priority, adjustment_type, percentage_bps, active)
-VALUES ('88888888-8888-4888-a888-888888888883', '55555555-5555-4555-a555-555555555555', 'Temporada Alta +20%', 'season', 10, 'percentage_bps', 2000, true);
+INSERT INTO public.service_price_rules (id, service_id, source_id, name, rule_type, priority, adjustment_type, percentage_bps, active)
+VALUES ('88888888-8888-4888-a888-888888888883', '55555555-5555-4555-a555-555555555555', '77777777-7777-4777-a777-777777777771', 'Temporada Alta +20%', 'season', 10, 'percentage_bps', 2000, true);
 
 DO $$
 DECLARE
@@ -152,10 +152,10 @@ END $$;
 DELETE FROM public.service_price_rules WHERE id = '88888888-8888-4888-a888-888888888883';
 
 -- TEST 5: Two matching rules with different priorities (priority 20 vs priority 10)
-INSERT INTO public.service_price_rules (id, service_id, name, rule_type, priority, adjustment_type, fixed_amount, active)
+INSERT INTO public.service_price_rules (id, service_id, source_id, name, rule_type, priority, adjustment_type, fixed_amount, active)
 VALUES 
-  ('88888888-8888-4888-a888-888888888884', '55555555-5555-4555-a555-555555555555', 'Regla Baja Prioridad', 'season', 10, 'override', 1000, true),
-  ('88888888-8888-4888-a888-888888888885', '55555555-5555-4555-a555-555555555555', 'Regla Alta Prioridad', 'season', 20, 'override', 1800, true);
+  ('88888888-8888-4888-a888-888888888884', '55555555-5555-4555-a555-555555555555', '77777777-7777-4777-a777-777777777771', 'Regla Baja Prioridad', 'season', 10, 'override', 1000, true),
+  ('88888888-8888-4888-a888-888888888885', '55555555-5555-4555-a555-555555555555', '77777777-7777-4777-a777-777777777771', 'Regla Alta Prioridad', 'season', 20, 'override', 1800, true);
 
 DO $$
 DECLARE
@@ -176,10 +176,10 @@ END $$;
 DELETE FROM public.service_price_rules WHERE id IN ('88888888-8888-4888-a888-888888888884', '88888888-8888-4888-a888-888888888885');
 
 -- TEST 6: Two matching rules with equal priority (deterministic tie-breaking by created_at asc, id asc)
-INSERT INTO public.service_price_rules (id, service_id, name, rule_type, priority, adjustment_type, fixed_amount, active, created_at)
+INSERT INTO public.service_price_rules (id, service_id, source_id, name, rule_type, priority, adjustment_type, fixed_amount, active, created_at)
 VALUES 
-  ('88888888-8888-4888-a888-888888888886', '55555555-5555-4555-a555-555555555555', 'Regla Antigua', 'season', 15, 'override', 1200, true, '2026-10-01T00:00:00Z'),
-  ('88888888-8888-4888-a888-888888888887', '55555555-5555-4555-a555-555555555555', 'Regla Nueva', 'season', 15, 'override', 1700, true, '2026-10-15T00:00:00Z');
+  ('88888888-8888-4888-a888-888888888886', '55555555-5555-4555-a555-555555555555', '77777777-7777-4777-a777-777777777771', 'Regla Antigua', 'season', 15, 'override', 1200, true, '2026-10-01T00:00:00Z'),
+  ('88888888-8888-4888-a888-888888888887', '55555555-5555-4555-a555-555555555555', '77777777-7777-4777-a777-777777777771', 'Regla Nueva', 'season', 15, 'override', 1700, true, '2026-10-15T00:00:00Z');
 
 DO $$
 DECLARE
@@ -335,8 +335,8 @@ BEGIN
   -- 1. Calculate authoritative quote
   v_quote := public.calculate_service_quote(
     '55555555-5555-4555-a555-555555555555',
-    '2026-11-20T10:00:00Z',
-    '2026-11-23T10:00:00Z', -- 3 days = 6000 base + 999 = 6999
+    '2026-11-26T10:00:00Z',
+    '2026-11-29T10:00:00Z', -- 3 days = 6000 base + 999 = 6999
     'suv',
     jsonb_build_array(jsonb_build_object('extra_id', '66666666-6666-4666-a666-666666666666', 'quantity', 1))
   );
@@ -345,15 +345,16 @@ BEGIN
   v_hold := public.create_booking_hold(
     p_facility_id => '44444444-4444-4444-a444-444444444444',
     p_service_id => '55555555-5555-4555-a555-555555555555',
-    p_entry_at => '2026-11-20T10:00:00Z',
-    p_exit_at => '2026-11-23T10:00:00Z',
+    p_entry_at => '2026-11-26T10:00:00Z',
+    p_exit_at => '2026-11-29T10:00:00Z',
     p_vehicle_id => null,
     p_customer_id => null,
     p_guest_email => 'guest.tester@aerovalet.demo',
     p_guest_name => 'Guest Tester',
     p_guest_phone => '+34600112233',
     p_vehicle_category => 'suv',
-    p_selected_extras => jsonb_build_array(jsonb_build_object('extra_id', '66666666-6666-4666-a666-666666666666', 'quantity', 1))
+    p_selected_extras => jsonb_build_array(jsonb_build_object('extra_id', '66666666-6666-4666-a666-666666666666', 'quantity', 1)),
+    p_expected_total_amount => (v_quote->>'customer_total_amount')::bigint
   );
 
   v_hold_price := (v_hold->>'price_amount')::bigint;
