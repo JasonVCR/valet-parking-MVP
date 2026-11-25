@@ -82,8 +82,8 @@ BEGIN
     PERFORM public.create_booking_hold(
       p_facility_id => '44444444-4444-4444-a444-444444444444',
       p_service_id => '55555555-5555-4555-a555-555555555555',
-      p_entry_at => '2026-11-25T10:00:00Z',
-      p_exit_at => '2026-11-27T10:00:00Z',
+      p_entry_at => '2026-12-10T10:00:00Z',
+      p_exit_at => '2026-12-12T10:00:00Z',
       p_vehicle_id => null,
       p_customer_id => null,
       p_guest_email => 'discrepancy.tester@aerovalet.demo',
@@ -134,8 +134,8 @@ BEGIN
     PERFORM public.create_booking_hold(
       p_facility_id => '44444444-4444-4444-a444-444444444444',
       p_service_id => '55555555-5555-4555-a555-555555555555',
-      p_entry_at => '2026-11-25T10:00:00Z',
-      p_exit_at => '2026-11-27T10:00:00Z',
+      p_entry_at => '2026-12-10T10:00:00Z',
+      p_exit_at => '2026-12-12T10:00:00Z',
       p_guest_email => 'invalid.price@aerovalet.demo',
       p_guest_name => 'Invalid Price',
       p_expected_total_amount => null
@@ -149,8 +149,8 @@ BEGIN
     PERFORM public.create_booking_hold(
       p_facility_id => '44444444-4444-4444-a444-444444444444',
       p_service_id => '55555555-5555-4555-a555-555555555555',
-      p_entry_at => '2026-11-25T10:00:00Z',
-      p_exit_at => '2026-11-27T10:00:00Z',
+      p_entry_at => '2026-12-10T10:00:00Z',
+      p_exit_at => '2026-12-12T10:00:00Z',
       p_guest_email => 'invalid.price@aerovalet.demo',
       p_guest_name => 'Invalid Price',
       p_expected_total_amount => 0
@@ -164,8 +164,8 @@ BEGIN
     PERFORM public.create_booking_hold(
       p_facility_id => '44444444-4444-4444-a444-444444444444',
       p_service_id => '55555555-5555-4555-a555-555555555555',
-      p_entry_at => '2026-11-25T10:00:00Z',
-      p_exit_at => '2026-11-27T10:00:00Z',
+      p_entry_at => '2026-12-10T10:00:00Z',
+      p_exit_at => '2026-12-12T10:00:00Z',
       p_guest_email => 'invalid.price@aerovalet.demo',
       p_guest_name => 'Invalid Price',
       p_expected_total_amount => -4999
@@ -179,8 +179,8 @@ BEGIN
     PERFORM public.create_booking_hold(
       p_facility_id => '44444444-4444-4444-a444-444444444444',
       p_service_id => '55555555-5555-4555-a555-555555555555',
-      p_entry_at => '2026-11-25T10:00:00Z',
-      p_exit_at => '2026-11-27T10:00:00Z',
+      p_entry_at => '2026-12-10T10:00:00Z',
+      p_exit_at => '2026-12-12T10:00:00Z',
       p_guest_email => 'invalid.price@aerovalet.demo',
       p_guest_name => 'Invalid Price'
     );
@@ -215,8 +215,8 @@ BEGIN
   -- 1. Get authoritative quote for 2 days
   v_quote := public.calculate_service_quote(
     '55555555-5555-4555-a555-555555555555',
-    '2026-11-25T10:00:00Z',
-    '2026-11-27T10:00:00Z'
+    '2026-12-10T10:00:00Z',
+    '2026-12-12T10:00:00Z'
   );
   v_expected_amount := (v_quote->>'customer_total_amount')::bigint;
 
@@ -224,8 +224,8 @@ BEGIN
   v_hold := public.create_booking_hold(
     p_facility_id => '44444444-4444-4444-a444-444444444444',
     p_service_id => '55555555-5555-4555-a555-555555555555',
-    p_entry_at => '2026-11-25T10:00:00Z',
-    p_exit_at => '2026-11-27T10:00:00Z',
+    p_entry_at => '2026-12-10T10:00:00Z',
+    p_exit_at => '2026-12-12T10:00:00Z',
     p_vehicle_id => null,
     p_customer_id => null,
     p_guest_email => 'parity.tester@aerovalet.demo',
@@ -269,8 +269,8 @@ BEGIN
   BEGIN
     PERFORM public.calculate_service_quote(
       '55555555-5555-4555-a555-555555555556',
-      '2026-11-25T10:00:00Z',
-      '2026-11-27T10:00:00Z'
+      '2026-12-10T10:00:00Z',
+      '2026-12-12T10:00:00Z'
     );
   EXCEPTION WHEN OTHERS THEN
     IF SQLERRM LIKE '%NO_VERIFIED_TARIFF_SOURCE%' THEN
@@ -298,8 +298,8 @@ DECLARE
 BEGIN
   v_quote := public.calculate_service_quote(
     '55555555-5555-4555-a555-555555555555',
-    '2026-11-25T10:00:00Z',
-    '2026-11-27T10:00:00Z' -- 2 days
+    '2026-12-10T10:00:00Z',
+    '2026-12-12T10:00:00Z' -- 2 days
   );
 
   -- Since the rule has NO verified source, it must be completely IGNORED.
@@ -328,8 +328,8 @@ DECLARE
 BEGIN
   v_quote := public.calculate_service_quote(
     '55555555-5555-4555-a555-555555555555',
-    '2026-11-25T10:00:00Z',
-    '2026-11-27T10:00:00Z'
+    '2026-12-10T10:00:00Z',
+    '2026-12-12T10:00:00Z'
   );
 
   -- 2 days * 1600 = 3200 supplier base
@@ -358,8 +358,8 @@ DECLARE
 BEGIN
   v_quote := public.calculate_service_quote(
     '55555555-5555-4555-a555-555555555557',
-    '2026-11-25T10:00:00Z',
-    '2026-11-26T10:00:00Z'
+    '2026-12-10T10:00:00Z',
+    '2026-12-11T10:00:00Z'
   );
 
   -- 2050 * 1.01 = 2070.5 cents -> Round Half-Up must yield 2071 cents
@@ -389,15 +389,15 @@ DECLARE
   v_hold1 jsonb;
   v_err_caught boolean := false;
 BEGIN
-  v_quote := public.calculate_service_quote('55555555-5555-4555-a555-555555555558', '2026-11-28T10:00:00Z', '2026-11-29T10:00:00Z');
+  v_quote := public.calculate_service_quote('55555555-5555-4555-a555-555555555558', '2026-12-13T10:00:00Z', '2026-12-14T10:00:00Z');
   v_expected := (v_quote->>'customer_total_amount')::bigint;
 
   -- Client 1 reserves the only sellable spot
   v_hold1 := public.create_booking_hold(
     p_facility_id => '44444444-4444-4444-a444-444444444449',
     p_service_id => '55555555-5555-4555-a555-555555555558',
-    p_entry_at => '2026-11-28T10:00:00Z',
-    p_exit_at => '2026-11-29T10:00:00Z',
+    p_entry_at => '2026-12-13T10:00:00Z',
+    p_exit_at => '2026-12-14T10:00:00Z',
     p_guest_email => 'client1@aerovalet.demo',
     p_guest_name => 'Client 1',
     p_expected_total_amount => v_expected
@@ -408,8 +408,8 @@ BEGIN
     PERFORM public.create_booking_hold(
       p_facility_id => '44444444-4444-4444-a444-444444444449',
       p_service_id => '55555555-5555-4555-a555-555555555558',
-      p_entry_at => '2026-11-28T12:00:00Z',
-      p_exit_at => '2026-11-29T12:00:00Z',
+      p_entry_at => '2026-12-13T12:00:00Z',
+      p_exit_at => '2026-12-14T12:00:00Z',
       p_guest_email => 'client2@aerovalet.demo',
       p_guest_name => 'Client 2',
       p_expected_total_amount => v_expected
@@ -444,8 +444,8 @@ BEGIN
   -- Quote with vehicle category + extra
   v_quote := public.calculate_service_quote(
     '55555555-5555-4555-a555-555555555555',
-    '2026-11-26T10:00:00Z',
-    '2026-11-29T10:00:00Z',
+    '2026-12-11T10:00:00Z',
+    '2026-12-14T10:00:00Z',
     'suv',
     jsonb_build_array(jsonb_build_object('extra_id', '66666666-6666-4666-a666-666666666666', 'quantity', 1))
   );
@@ -455,8 +455,8 @@ BEGIN
   v_hold := public.create_booking_hold(
     p_facility_id => '44444444-4444-4444-a444-444444444444',
     p_service_id => '55555555-5555-4555-a555-555555555555',
-    p_entry_at => '2026-11-26T10:00:00Z',
-    p_exit_at => '2026-11-29T10:00:00Z',
+    p_entry_at => '2026-12-11T10:00:00Z',
+    p_exit_at => '2026-12-14T10:00:00Z',
     p_guest_email => 'parity.e2e@aerovalet.demo',
     p_guest_name => 'Parity E2E',
     p_vehicle_category => 'suv',
@@ -486,13 +486,13 @@ DECLARE
   v_released boolean;
   v_status text;
 BEGIN
-  v_quote := public.calculate_service_quote('55555555-5555-4555-a555-555555555555', '2026-11-26T10:00:00Z', '2026-11-28T10:00:00Z');
+  v_quote := public.calculate_service_quote('55555555-5555-4555-a555-555555555555', '2026-12-11T10:00:00Z', '2026-12-13T10:00:00Z');
 
   v_hold := public.create_booking_hold(
     p_facility_id => '44444444-4444-4444-a444-444444444444',
     p_service_id => '55555555-5555-4555-a555-555555555555',
-    p_entry_at => '2026-11-26T10:00:00Z',
-    p_exit_at => '2026-11-28T10:00:00Z',
+    p_entry_at => '2026-12-11T10:00:00Z',
+    p_exit_at => '2026-12-13T10:00:00Z',
     p_guest_email => 'release.tester@aerovalet.demo',
     p_guest_name => 'Release Tester',
     p_expected_total_amount => (v_quote->>'customer_total_amount')::bigint
@@ -527,8 +527,8 @@ BEGIN
   BEGIN
     PERFORM public.calculate_service_quote(
       p_service_id => '55555555-5555-4555-a555-555555555555',
-      p_entry_at => '2026-11-26T10:00:00Z',
-      p_exit_at => '2026-11-28T10:00:00Z',
+      p_entry_at => '2026-12-11T10:00:00Z',
+      p_exit_at => '2026-12-13T10:00:00Z',
       p_facility_id => '44444444-4444-4444-a444-444444444445'
     );
   EXCEPTION WHEN OTHERS THEN
@@ -586,8 +586,8 @@ BEGIN
     '44444444-4444-4444-a444-444444444445',
     '55555555-5555-4555-a555-555555555556',
     '11111111-1111-4111-a111-111111111111',
-    '2026-11-26T10:00:00Z',
-    '2026-11-28T10:00:00Z',
+    '2026-12-11T10:00:00Z',
+    '2026-12-13T10:00:00Z',
     'Commercial Lead',
     'lead@aerovalet.demo',
     '+34600112233',
@@ -605,8 +605,8 @@ BEGIN
       '44444444-4444-4444-a444-444444444445',
       '55555555-5555-4555-a555-555555555556',
       '11111111-1111-4111-a111-111111111111',
-      '2026-11-26T10:00:00Z',
-      '2026-11-28T10:00:00Z',
+      '2026-12-11T10:00:00Z',
+      '2026-12-13T10:00:00Z',
       'Commercial Lead Duplicate',
       'lead@aerovalet.demo',
       'idemp-key-test-12345678'
@@ -624,3 +624,4 @@ BEGIN
 END $$;
 
 ROLLBACK;
+

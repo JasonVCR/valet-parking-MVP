@@ -49,8 +49,8 @@ Set-Content -Path $setupFile -Value $setupSql
 if ($LASTEXITCODE -ne 0) { throw "Failed to set up concurrency test fixtures" }
 
 # 2. Get authoritative quote
-$quoteJson = & "$pgBin\psql.exe" -p $port -U postgres -d $db -t -A -c "SELECT public.calculate_service_quote('55555555-5555-4555-a555-555555555599', '2026-11-28T10:00:00Z', '2026-11-30T10:00:00Z');"
-$expectedAmount = (& "$pgBin\psql.exe" -p $port -U postgres -d $db -t -A -c "SELECT (public.calculate_service_quote('55555555-5555-4555-a555-555555555599', '2026-11-28T10:00:00Z', '2026-11-30T10:00:00Z')->>'customer_total_amount')::bigint;").Trim()
+$quoteJson = & "$pgBin\psql.exe" -p $port -U postgres -d $db -t -A -c "SELECT public.calculate_service_quote('55555555-5555-4555-a555-555555555599', '2026-12-10T10:00:00Z', '2026-12-12T10:00:00Z');"
+$expectedAmount = (& "$pgBin\psql.exe" -p $port -U postgres -d $db -t -A -c "SELECT (public.calculate_service_quote('55555555-5555-4555-a555-555555555599', '2026-12-10T10:00:00Z', '2026-12-12T10:00:00Z')->>'customer_total_amount')::bigint;").Trim()
 Write-Host "Authoritative quote for test service: $expectedAmount cents (2 days * 3000 + 800 + 199 = 6999)"
 
 # 3. Create SQL payloads for Client Alpha and Client Beta
@@ -64,8 +64,8 @@ BEGIN
   v_hold := public.create_booking_hold(
     p_facility_id => '44444444-4444-4444-a444-444444444499',
     p_service_id => '55555555-5555-4555-a555-555555555599',
-    p_entry_at => '2026-11-28T10:00:00Z',
-    p_exit_at => '2026-11-30T10:00:00Z',
+    p_entry_at => '2026-12-10T10:00:00Z',
+    p_exit_at => '2026-12-12T10:00:00Z',
     p_guest_email => '__CLIENT_EMAIL__',
     p_guest_name => '__CLIENT_NAME__',
     p_expected_total_amount => __EXPECTED_AMOUNT__

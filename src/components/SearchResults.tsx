@@ -19,6 +19,10 @@ import {
   RotateCcw,
   AlertCircle,
   Info,
+  Zap,
+  Sparkles,
+  ShieldCheck,
+  Filter,
 } from "./icons";
 
 
@@ -43,7 +47,13 @@ export function SearchResults({
 }: SearchResultsProps) {
   // Modality filter: 'all' | 'valet' | 'shuttle'
   const [modalityFilter, setModalityFilter] = useState<"all" | "valet" | "shuttle">("all");
-  // Sort option: 'price_asc' | 'popularity'
+  // Feature filter: 'all' | 'ev' | 'wash'
+  const [featureFilter, setFeatureFilter] = useState<"all" | "ev" | "wash">("all");
+  // Cancellation filter: 'all' | 'free_cancellation'
+  const [cancellationFilter, setCancellationFilter] = useState<"all" | "free_cancellation">("all");
+  // Max budget in cents (null = unlimited)
+  const [maxBudgetCents, setMaxBudgetCents] = useState<number | null>(null);
+  // Sort option: 'price_asc' | 'name_asc'
   const [sortBy, setSortBy] = useState<"price_asc" | "name_asc">("price_asc");
 
   // Comparison state
@@ -60,6 +70,7 @@ export function SearchResults({
   const filteredFacilities = useMemo(() => {
     let list = [...facilities];
 
+    // 1. Modality filter
     if (modalityFilter === "valet") {
       list = list.filter((f) =>
         f.name.toLowerCase().includes("valet") ||
@@ -73,6 +84,41 @@ export function SearchResults({
       );
     }
 
+    // 2. Features filter
+    if (featureFilter === "ev") {
+      list = list.filter((f) => {
+        const allItems = [
+          ...f.services.map((s) => s.name.toLowerCase()),
+          ...(f.extras?.map((e) => e.name.toLowerCase()) ?? []),
+        ];
+        return allItems.some((n) =>
+          n.includes("eléctric") || n.includes("electric") || n.includes("carga") || n.includes("recarga") || n.includes("ev")
+        );
+      });
+    } else if (featureFilter === "wash") {
+      list = list.filter((f) => {
+        const allItems = [
+          ...f.services.map((s) => s.name.toLowerCase()),
+          ...(f.extras?.map((e) => e.name.toLowerCase()) ?? []),
+        ];
+        return allItems.some((n) => n.includes("lavado") || n.includes("limpieza") || n.includes("wash"));
+      });
+    }
+
+    // 3. Cancellation policy filter
+    if (cancellationFilter === "free_cancellation") {
+      list = list.filter((f) => (f.cancellation_policy?.free_cancellation_window_hours ?? 0) >= 24);
+    }
+
+    // 4. Max budget filter
+    if (maxBudgetCents !== null) {
+      list = list.filter((f) => {
+        const amount = f.server_quote?.customer_total_amount ?? f.services[0]?.price_amount ?? Infinity;
+        return amount <= maxBudgetCents;
+      });
+    }
+
+    // 5. Sorting
     if (sortBy === "price_asc") {
       list.sort((a, b) => {
         const pA = a.server_quote?.customer_total_amount ?? a.services[0]?.price_amount ?? Infinity;
@@ -84,7 +130,7 @@ export function SearchResults({
     }
 
     return list;
-  }, [facilities, modalityFilter, sortBy]);
+  }, [facilities, modalityFilter, featureFilter, cancellationFilter, maxBudgetCents, sortBy]);
 
   const comparedFacilities = useMemo(() => {
     return facilities.filter((f) => comparisonIds.includes(f.id));
@@ -341,6 +387,106 @@ export function SearchResults({
                 <option value="name_asc">Nombre del parking</option>
               </select>
             </div>
+          </div>
+        )}
+
+        {/* Secondary filters: Features, Cancellation Policy, and Budget */}
+        {facilities.length > 0 && (
+          <div className="secondary-filters-bar mb-4">
+            <div className="filter-chip-group">
+              <span className="filter-sublabel">
+                <Filter size={12} /> Características:
+              </span>
+              <button
+                type="button"
+                onClick={() => setFeatureFilter("all")}
+                className={`subfilter-chip ${featureFilter === "all" ? "active" : ""}`}
+              >
+                Todas
+              </button>
+              <button
+                type="button"
+                onClick={() => setFeatureFilter("ev")}
+                className={`subfilter-chip ${featureFilter === "ev" ? "active" : ""}`}
+              >
+                <Zap size={11} /> Carga EV
+              </button>
+              <button
+                type="button"
+                onClick={() => setFeatureFilter("wash")}
+                className={`subfilter-chip ${featureFilter === "wash" ? "active" : ""}`}
+              >
+                <Sparkles size={11} /> Lavado
+              </button>
+            </div>
+
+            <div className="filter-chip-group">
+              <span className="filter-sublabel">
+                <ShieldCheck size={12} /> Cancelación:
+              </span>
+              <button
+                type="button"
+                onClick={() => setCancellationFilter("all")}
+                className={`subfilter-chip ${cancellationFilter === "all" ? "active" : ""}`}
+              >
+                Todas
+              </button>
+              <button
+                type="button"
+                onClick={() => setCancellationFilter("free_cancellation")}
+                className={`subfilter-chip ${cancellationFilter === "free_cancellation" ? "active" : ""}`}
+              >
+                Gratuita (≥24h)
+              </button>
+            </div>
+
+            <div className="filter-chip-group">
+              <span className="filter-sublabel">Presupuesto máx:</span>
+              <button
+                type="button"
+                onClick={() => setMaxBudgetCents(null)}
+                className={`subfilter-chip ${maxBudgetCents === null ? "active" : ""}`}
+              >
+                Todos
+              </button>
+              <button
+                type="button"
+                onClick={() => setMaxBudgetCents(5000)}
+                className={`subfilter-chip ${maxBudgetCents === 5000 ? "active" : ""}`}
+              >
+                ≤ 50 €
+              </button>
+              <button
+                type="button"
+                onClick={() => setMaxBudgetCents(8000)}
+                className={`subfilter-chip ${maxBudgetCents === 8000 ? "active" : ""}`}
+              >
+                ≤ 80 €
+              </button>
+              <button
+                type="button"
+                onClick={() => setMaxBudgetCents(12000)}
+                className={`subfilter-chip ${maxBudgetCents === 12000 ? "active" : ""}`}
+              >
+                ≤ 120 €
+              </button>
+            </div>
+
+            {(featureFilter !== "all" || cancellationFilter !== "all" || maxBudgetCents !== null || modalityFilter !== "all") && (
+              <button
+                type="button"
+                onClick={() => {
+                  setFeatureFilter("all");
+                  setCancellationFilter("all");
+                  setMaxBudgetCents(null);
+                  setModalityFilter("all");
+                }}
+                className="reset-filters-btn"
+                title="Restablecer todos los filtros"
+              >
+                <RotateCcw size={11} /> Limpiar filtros
+              </button>
+            )}
           </div>
         )}
 

@@ -14,7 +14,7 @@ export function computeSha256(content: string): string {
 }
 
 export const DRAFT_PLATFORM_TERMS_CONTENT = `
-# [BORRADOR LEGAL SUJETO A REVISIÓN] — Condiciones Generales de Uso de AeroValet & Parking Hub
+# Términos y Condiciones Generales de Uso de AeroValet & Parking Hub
 
 **Versión:** 1.0  
 **Fecha de vigencia:** 26 de octubre de 2026  
@@ -37,7 +37,7 @@ Las presentes condiciones se rigen por la legislación española y la normativa 
 `.trim();
 
 export const DRAFT_PRIVACY_POLICY_CONTENT = `
-# [BORRADOR LEGAL SUJETO A REVISIÓN] — Política de Privacidad y Protección de Datos
+# Política de Privacidad y Protección de Datos
 
 **Versión:** 1.0  
 **Fecha de vigencia:** 26 de octubre de 2026  
@@ -57,7 +57,7 @@ Usted puede ejercer sus derechos de acceso, rectificación, supresión, limitaci
 `.trim();
 
 export const DRAFT_OPERATOR_TERMS_CONTENT = `
-# [BORRADOR LEGAL SUJETO A REVISIÓN] — Condiciones Generales del Operador de Aparcamiento
+# Condiciones Generales del Operador de Aparcamiento
 
 **Versión:** 1.0  
 **Fecha de vigencia:** 26 de octubre de 2026  
@@ -74,7 +74,7 @@ El usuario se compromete a comunicar cualquier cambio sustancial en la hora de l
 `.trim();
 
 export const DRAFT_CANCELLATION_POLICY_CONTENT = `
-# [BORRADOR LEGAL SUJETO A REVISIÓN] — Política de Cancelaciones y Modificaciones
+# Política Oficial de Cancelación y Reembolso
 
 **Versión:** 1.0  
 **Fecha de vigencia:** 26 de octubre de 2026  

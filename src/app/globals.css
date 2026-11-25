@@ -1055,6 +1055,83 @@ button {
   cursor: pointer;
 }
 
+/* Secondary Multi-Dimensional Filters Bar */
+.secondary-filters-bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.875rem;
+  padding: 0.75rem 1rem;
+  background-color: var(--bg-white, #ffffff);
+  border: 1px solid var(--border-slate-200, #e2e8f0);
+  border-radius: var(--radius-lg, 0.75rem);
+  box-shadow: 0 1px 2px 0 rgba(0, 0, 0, 0.05);
+}
+
+.filter-chip-group {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  flex-wrap: wrap;
+}
+
+.filter-sublabel {
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: var(--text-slate-500, #64748b);
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+  margin-right: 0.25rem;
+}
+
+.subfilter-chip {
+  padding: 0.25rem 0.55rem;
+  font-size: 0.6875rem;
+  font-weight: 600;
+  color: var(--text-slate-700, #334155);
+  background-color: var(--bg-slate-50, #f8fafc);
+  border: 1px solid var(--border-slate-200, #e2e8f0);
+  border-radius: 9999px;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+  transition: all 0.15s ease-in-out;
+}
+
+.subfilter-chip:hover {
+  background-color: var(--border-slate-100, #f1f5f9);
+  color: var(--text-slate-900, #0f172a);
+}
+
+.subfilter-chip.active {
+  background-color: var(--primary-blue, #2563eb);
+  border-color: var(--primary-blue, #2563eb);
+  color: #ffffff;
+}
+
+.reset-filters-btn {
+  margin-left: auto;
+  padding: 0.25rem 0.65rem;
+  font-size: 0.6875rem;
+  font-weight: 600;
+  color: #dc2626;
+  background-color: #fef2f2;
+  border: 1px solid #fecaca;
+  border-radius: 9999px;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+  transition: all 0.15s ease;
+}
+
+.reset-filters-btn:hover {
+  background-color: #fee2e2;
+  border-color: #f87171;
+}
+
 /* ─── Parkings Grid & Cards ─── */
 .parkings-grid {
   display: flex;

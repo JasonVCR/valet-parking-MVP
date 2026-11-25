@@ -310,7 +310,17 @@ export function ParkingCard({
                 </div>
                 <p className="price-disclaimer">
                   <Info size={11} />
-                  <span>Precio verificado en servidor · Unidades menores enteras</span>
+                  <span>
+                    {hasOfficialVerifiedTariff
+                      ? `Precio verificado en servidor · Tarifa oficial${
+                          quote.tariff_source?.retrieved_at
+                            ? ` (revisada ${new Date(quote.tariff_source.retrieved_at).toLocaleDateString("es-ES")})`
+                            : ""
+                        }`
+                      : isSyntheticDemo
+                      ? "Cotización de demostración · Sandbox local"
+                      : "Tarifa orientativa · Pendiente de verificación oficial"}
+                  </span>
                 </p>
               </>
             ) : (
