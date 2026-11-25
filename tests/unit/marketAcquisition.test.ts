@@ -1,13 +1,5 @@
 /**
  * Unit Tests for AeroValet Market Discovery & Tariff Acquisition Engine.
- *
- * Validates:
- * - Target airport coverage.
- * - Robots.txt compliance and rate-limiting parsing.
- * - Content hashing with SHA-256 for tariff change detection.
- * - Operator and facility deduplication.
- * - Tabular CSV tariff import and duration band normalization.
- * - Quality control queue (ambiguous / missing tariffs routed to manual consultation).
  */
 
 import { describe, it, expect } from "vitest";
@@ -17,8 +9,10 @@ import {
   validateRobotsRules,
   isDuplicateOperator,
   importTariffCsv,
+  importTariffJsonFeed,
   runMarketIngestionPipeline,
-  CuratedMarketCatalogProvider,
+  TestCuratedCatalogProvider,
+  createSearchProvider,
 } from "@/server/discovery/acquisition";
 
 describe("Market Discovery & Acquisition Engine", () => {
@@ -31,7 +25,7 @@ describe("Market Discovery & Acquisition Engine", () => {
     expect(codes).toContain("VLC");
   });
 
-  describe("Robots.txt compliance validation", () => {
+  describe("Robots.txt compliance validation with mature rules", () => {
     const sampleRobotsTxt = `
 User-agent: *
 Disallow: /admin/
@@ -39,14 +33,21 @@ Disallow: /checkout/
 Disallow: /private/
 Crawl-delay: 2
 
-User-agent: BadBot
-Disallow: /
+User-agent: AeroValetBot
+Disallow: /internal/
+Allow: /checkout/public-tariffs
+Crawl-delay: 1
 `;
 
     it("permits crawling public tariff pages", () => {
       const res = validateRobotsRules(sampleRobotsTxt, "/tarifas-parking");
       expect(res.allowed).toBe(true);
-      expect(res.crawlDelayMs).toBe(2000);
+      expect(res.crawlDelayMs).toBe(1000); // respects AeroValetBot block
+    });
+
+    it("allows explicitly allowed subpath even if parent matches", () => {
+      const res = validateRobotsRules(sampleRobotsTxt, "/checkout/public-tariffs");
+      expect(res.allowed).toBe(true);
     });
 
     it("strictly forbids crawling private or disallowed paths", () => {
@@ -55,9 +56,10 @@ Disallow: /
       expect(res.reason).toContain("Disallow: /admin/");
     });
 
-    it("respects checkout portal exclusions", () => {
-      const res = validateRobotsRules(sampleRobotsTxt, "/checkout/payment");
+    it("respects specific agent disallow rules", () => {
+      const res = validateRobotsRules(sampleRobotsTxt, "/internal/status");
       expect(res.allowed).toBe(false);
+      expect(res.reason).toContain("Disallow: /internal/");
     });
   });
 
@@ -109,19 +111,20 @@ Disallow: /
     });
   });
 
-  describe("CSV Tariff Import & Normalization", () => {
+  describe("RFC 4180 CSV Tariff Import & Error Reporting", () => {
     const validCsv = `
 operator_name,operator_slug,airport_iata,modality,address,source_url,band_name,min_hours,max_hours,price_eur,pricing_unit,ev_charging,car_wash,covered,free_canc_hours
-Valet Barajas Test,valet-barajas-test,MAD,valet,Terminal T1-T4,https://test.es/tarifas,1 Dia,0,24,20.00,flat_stay,true,true,true,24
-Valet Barajas Test,valet-barajas-test,MAD,valet,Terminal T1-T4,https://test.es/tarifas,2 Dias,25,48,35.00,flat_stay,true,true,true,24
-Valet Barajas Test,valet-barajas-test,MAD,valet,Terminal T1-T4,https://test.es/tarifas,Semana,49,168,75.00,flat_stay,true,true,true,24
+Valet Barajas Test,valet-barajas-test,MAD,valet,Terminal T1-T4,https://test.es/tarifas,1 Dia,0,24,20.00,flat_stay,verified,verified,verified,24
+Valet Barajas Test,valet-barajas-test,MAD,valet,Terminal T1-T4,https://test.es/tarifas,2 Dias,25,48,35.00,flat_stay,verified,verified,verified,24
+Valet Barajas Test,valet-barajas-test,MAD,valet,Terminal T1-T4,https://test.es/tarifas,Semana,49,168,75.00,flat_stay,verified,verified,verified,24
 `.trim();
 
-    it("imports CSV rows into structured facility and duration bands", () => {
-      const records = importTariffCsv(validCsv);
-      expect(records).toHaveLength(1);
+    it("imports CSV rows into structured facility and duration bands without auto-verifying", () => {
+      const { validRecords, errors } = importTariffCsv(validCsv);
+      expect(errors).toHaveLength(0);
+      expect(validRecords).toHaveLength(1);
 
-      const fac = records[0];
+      const fac = validRecords[0];
       expect(fac.operatorName).toBe("Valet Barajas Test");
       expect(fac.airportIata).toBe("MAD");
       expect(fac.modality).toBe("valet");
@@ -131,21 +134,91 @@ Valet Barajas Test,valet-barajas-test,MAD,valet,Terminal T1-T4,https://test.es/t
         name: "1 Dia",
         minDurationHours: 0,
         maxDurationHours: 24,
-        priceAmount: 2000, // 20.00 EUR in cents
+        priceAmount: 2000,
         currency: "EUR",
         pricingUnit: "flat_stay",
+        evidenceSnippet: "Línea CSV 1: 0h-24h @ 20 EUR",
       });
 
-      expect(fac.tariffBands[2].priceAmount).toBe(7500); // 75.00 EUR
-      expect(fac.features.evCharging).toBe(true);
-      expect(fac.features.carWash).toBe(true);
-      expect(fac.cancellationPolicy.freeCancellationWindowHours).toBe(24);
-      expect(fac.verificationStatus).toBe("verified");
+      expect(fac.features.evCharging).toBe("verified");
+      expect(fac.features.carWash).toBe("verified");
+      // CSV imports must default to pending_review until verified
+      expect(fac.verificationStatus).toBe("pending_review");
     });
 
-    it("throws clear error on malformed CSV header", () => {
-      const invalidCsv = "col1,col2\nval1,val2";
-      expect(() => importTariffCsv(invalidCsv)).toThrow(/Columna obligatoria ausente/);
+    it("returns per-row errors instead of throwing or silently omitting rows", () => {
+      const flawedCsv = `
+operator_name,operator_slug,airport_iata,modality,address,source_url,band_name,min_hours,max_hours,price_eur,pricing_unit
+Op Good,op-good,MAD,valet,Aeropuerto,https://op.es,1d,0,24,20.00,flat_stay
+,op-bad,MAD,valet,Aeropuerto,https://op.es,1d,0,24,20.00,flat_stay
+Op Good,op-good,INVALID,valet,Aeropuerto,https://op.es,1d,0,24,20.00,flat_stay
+Op Good,op-good,MAD,valet,Aeropuerto,https://op.es,1d,-5,24,20.00,flat_stay
+Op Good,op-good,MAD,valet,Aeropuerto,https://op.es,1d,24,10,20.00,flat_stay
+Op Good,op-good,MAD,valet,Aeropuerto,https://op.es,1d,0,24,-10.00,flat_stay
+`.trim();
+
+      const { validRecords, errors } = importTariffCsv(flawedCsv);
+      expect(validRecords).toHaveLength(1);
+      expect(validRecords[0].tariffBands).toHaveLength(1);
+      expect(errors.length).toBe(5);
+      expect(errors[0].error).toContain("El nombre del operador no puede estar vacío");
+      expect(errors[1].error).toContain("Código de aeropuerto IATA inválido");
+      expect(errors[2].error).toContain("min_hours debe ser un entero no negativo");
+      expect(errors[3].error).toContain("estrictamente mayor que min_hours");
+      expect(errors[4].error).toContain("price_eur debe ser un número positivo");
+    });
+  });
+
+  describe("Zod-Validated JSON Feed Importer", () => {
+    it("successfully validates and imports a compliant operator JSON feed", () => {
+      const feedJson = JSON.stringify({
+        version: "1.0",
+        operator: {
+          name: "Direct Operator Valet",
+          slug: "direct-operator-valet",
+          airportIata: "BCN",
+          modality: "valet",
+          address: "Terminal 1 Salidas BCN",
+          sourceUrl: "https://directvalet.example/feed.json",
+        },
+        features: {
+          evCharging: "verified",
+          carWash: "not_available",
+          covered: "verified",
+          cctv24h: "verified",
+        },
+        cancellationPolicy: {
+          freeCancellationWindowHours: 24,
+          lateCancellationFeeBps: 5000,
+        },
+        tariffBands: [
+          {
+            name: "Tramo 1 Día",
+            minDurationHours: 0,
+            maxDurationHours: 24,
+            priceAmountCents: 2500,
+            currency: "EUR",
+            pricingUnit: "flat_stay",
+            evidenceSnippet: "Feed oficial API v1.0",
+          },
+        ],
+      });
+
+      const rec = importTariffJsonFeed(feedJson);
+      expect(rec.operatorName).toBe("Direct Operator Valet");
+      expect(rec.airportIata).toBe("BCN");
+      expect(rec.features.evCharging).toBe("verified");
+      expect(rec.features.carWash).toBe("not_available");
+      expect(rec.tariffBands[0].priceAmount).toBe(2500);
+      expect(rec.verificationStatus).toBe("verified");
+    });
+
+    it("rejects invalid JSON feeds missing required fields", () => {
+      const badFeed = JSON.stringify({
+        version: "1.0",
+        operator: { name: "X" }, // slug missing, invalid name length
+      });
+      expect(() => importTariffJsonFeed(badFeed)).toThrow();
     });
   });
 
@@ -153,17 +226,18 @@ Valet Barajas Test,valet-barajas-test,MAD,valet,Terminal T1-T4,https://test.es/t
     it("executes discovery, deduplication, and quality control queue", async () => {
       const result = await runMarketIngestionPipeline(
         TARGET_AIRPORTS.filter((a) => a.iataCode === "MAD"),
-        new CuratedMarketCatalogProvider()
+        new TestCuratedCatalogProvider()
       );
 
       expect(result.airportsProcessed).toBe(1);
       expect(result.candidatesDiscovered).toBeGreaterThan(0);
 
-      // Verified operators have published tariff bands
+      // Verified operators have published tariff bands AND evidence snippets
       const verified = result.records.filter((r) => r.verificationStatus === "verified");
       expect(verified.length).toBeGreaterThan(0);
       for (const v of verified) {
         expect(v.tariffBands.length).toBeGreaterThan(0);
+        expect(v.tariffBands[0].evidenceSnippet).toBeDefined();
         expect(v.tariffSource.contentHash).toHaveLength(64);
       }
 
@@ -174,6 +248,11 @@ Valet Barajas Test,valet-barajas-test,MAD,valet,Terminal T1-T4,https://test.es/t
         expect(m.tariffBands).toHaveLength(0);
         expect(m.reviewNotes).toContain("Tarifa bajo consulta");
       }
+    });
+
+    it("supports switching providers via factory", () => {
+      const provider = createSearchProvider("curated_test");
+      expect(provider.name).toBe("TestCuratedCatalogProvider");
     });
   });
 });

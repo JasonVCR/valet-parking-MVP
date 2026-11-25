@@ -14,10 +14,13 @@ export function computeSha256(content: string): string {
 }
 
 export const DRAFT_PLATFORM_TERMS_CONTENT = `
+# [BORRADOR LEGAL SUJETO A REVISIÓN]
 # Términos y Condiciones Generales de Uso de AeroValet & Parking Hub
 
-**Versión:** 1.0  
-**Fecha de vigencia:** 26 de octubre de 2026  
+> **Aviso Importante:** Este documento es un borrador preliminar de prueba sujeto a revisión jurídica vinculante y aprobación por asesoría legal colegiada. No constituye oferta vinculante ni versión definitiva. Los correos y datos de contacto aquí expuestos son marcadores de posición demo (sandbox).
+
+**Versión:** 1.0 (Borrador Técnico)
+**Fecha de vigencia propuesta:** 26 de octubre de 2026
 **Ámbito:** Plataforma AeroValet & Parking Hub  
 
 1. **Objeto de la plataforma**  
@@ -37,11 +40,14 @@ Las presentes condiciones se rigen por la legislación española y la normativa 
 `.trim();
 
 export const DRAFT_PRIVACY_POLICY_CONTENT = `
+# [BORRADOR LEGAL SUJETO A REVISIÓN]
 # Política de Privacidad y Protección de Datos
 
-**Versión:** 1.0  
-**Fecha de vigencia:** 26 de octubre de 2026  
-**Responsable del Tratamiento:** AeroValet Platform S.L. (en constitución)  
+> **Aviso Importante:** Borrador técnico preliminar sujeto a dictamen del Delegado de Protección de Datos (DPO) y asesoría jurídica especializada en RGPD / LOPDGDD.
+
+**Versión:** 1.0 (Borrador Técnico)
+**Fecha de vigencia propuesta:** 26 de octubre de 2026
+**Responsable del Tratamiento:** AeroValet Platform S.L. (en constitución - demo)
 
 1. **Finalidad del tratamiento**  
 Los datos identificativos, de contacto (nombre, correo electrónico, teléfono) y del vehículo (matrícula, modelo) se tratan exclusivamente con la finalidad de gestionar la reserva de plaza, bloquear la capacidad ante el operador y remitir la confirmación del servicio.
@@ -53,14 +59,17 @@ El tratamiento se fundamenta en la ejecución de la relación contractual o prec
 Los datos estrictamente necesarios para la operativa de recepción y entrega del vehículo son comunicados al Operador de aparcamiento seleccionado por el usuario.
 
 4. **Derechos del interesado**  
-Usted puede ejercer sus derechos de acceso, rectificación, supresión, limitación y oposición dirigiendo una solicitud a privacidad@aerovalet.demo.
+Usted puede ejercer sus derechos de acceso, rectificación, supresión, limitación y oposición dirigiendo una solicitud al buzón de prueba privacidad@aerovalet.demo (marcador demo).
 `.trim();
 
 export const DRAFT_OPERATOR_TERMS_CONTENT = `
+# [BORRADOR LEGAL SUJETO A REVISIÓN]
 # Condiciones Generales del Operador de Aparcamiento
 
-**Versión:** 1.0  
-**Fecha de vigencia:** 26 de octubre de 2026  
+> **Aviso Importante:** Borrador técnico preliminar de condiciones estándar entre operadores de aparcamiento y clientes finales.
+
+**Versión:** 1.0 (Borrador Técnico)
+**Fecha de vigencia propuesta:** 26 de octubre de 2026
 **Ámbito:** Operador del Servicio de Aparcamiento / Valet  
 
 1. **Recepción e Inspección del Vehículo**  
@@ -74,10 +83,13 @@ El usuario se compromete a comunicar cualquier cambio sustancial en la hora de l
 `.trim();
 
 export const DRAFT_CANCELLATION_POLICY_CONTENT = `
+# [BORRADOR LEGAL SUJETO A REVISIÓN]
 # Política Oficial de Cancelación y Reembolso
 
-**Versión:** 1.0  
-**Fecha de vigencia:** 26 de octubre de 2026  
+> **Aviso Importante:** Borrador técnico de política de cancelación y devoluciones sujeto a validación legal.
+
+**Versión:** 1.0 (Borrador Técnico)
+**Fecha de vigencia propuesta:** 26 de octubre de 2026
 
 1. **Cancelación Gratuita**  
 El cliente tiene derecho a la cancelación sin penalización y al reembolso del 100% del importe abonado si la cancelación se solicita con al menos veinticuatro (24) horas de antelación a la hora de entrada reservada.
@@ -103,10 +115,10 @@ export const PLATFORM_TERMS_DOCUMENT: LegalDocument = {
   title: "Términos y Condiciones Generales de Uso de AeroValet",
   content_markdown: DRAFT_PLATFORM_TERMS_CONTENT,
   sha256_hash: computeSha256(DRAFT_PLATFORM_TERMS_CONTENT),
-  status: "published",
+  status: "draft",
   effective_from: "2026-10-26T00:00:00Z",
   effective_until: null,
-  published_at: "2026-10-26T00:00:00Z",
+  published_at: null,
   created_at: "2026-10-26T00:00:00Z",
   updated_at: "2026-10-26T00:00:00Z",
 };
@@ -121,10 +133,10 @@ export const PRIVACY_POLICY_DOCUMENT: LegalDocument = {
   title: "Política de Privacidad y Protección de Datos",
   content_markdown: DRAFT_PRIVACY_POLICY_CONTENT,
   sha256_hash: computeSha256(DRAFT_PRIVACY_POLICY_CONTENT),
-  status: "published",
+  status: "draft",
   effective_from: "2026-10-26T00:00:00Z",
   effective_until: null,
-  published_at: "2026-10-26T00:00:00Z",
+  published_at: null,
   created_at: "2026-10-26T00:00:00Z",
   updated_at: "2026-10-26T00:00:00Z",
 };
@@ -139,10 +151,10 @@ export const CANCELLATION_POLICY_DOCUMENT: LegalDocument = {
   title: "Política de Cancelación y Reembolso",
   content_markdown: DRAFT_CANCELLATION_POLICY_CONTENT,
   sha256_hash: computeSha256(DRAFT_CANCELLATION_POLICY_CONTENT),
-  status: "published",
+  status: "draft",
   effective_from: "2026-10-26T00:00:00Z",
   effective_until: null,
-  published_at: "2026-10-26T00:00:00Z",
+  published_at: null,
   created_at: "2026-10-26T00:00:00Z",
   updated_at: "2026-10-26T00:00:00Z",
 };

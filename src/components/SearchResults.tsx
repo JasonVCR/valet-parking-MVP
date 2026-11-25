@@ -11,6 +11,13 @@ import { FaqSection } from "./FaqSection";
 import { createBookingHoldAction } from "@/server/bookingHolds";
 import { submitCommercialInquiryAction } from "@/server/commercialInquiries";
 import { formatMoney } from "@/lib/pricing";
+import {
+  applyAllSearchFilters,
+  type ModalityFilter,
+  type FeatureFilter,
+  type CancellationFilter,
+  type SortOption,
+} from "@/lib/search/filters";
 
 import {
   SlidersHorizontal,
@@ -68,68 +75,13 @@ export function SearchResults({
 
   // Filtered and sorted list
   const filteredFacilities = useMemo(() => {
-    let list = [...facilities];
-
-    // 1. Modality filter
-    if (modalityFilter === "valet") {
-      list = list.filter((f) =>
-        f.name.toLowerCase().includes("valet") ||
-        f.services.some((s) => s.name.toLowerCase().includes("valet"))
-      );
-    } else if (modalityFilter === "shuttle") {
-      list = list.filter((f) =>
-        f.name.toLowerCase().includes("shuttle") ||
-        f.name.toLowerCase().includes("lanzadera") ||
-        !f.name.toLowerCase().includes("valet")
-      );
-    }
-
-    // 2. Features filter
-    if (featureFilter === "ev") {
-      list = list.filter((f) => {
-        const allItems = [
-          ...f.services.map((s) => s.name.toLowerCase()),
-          ...(f.extras?.map((e) => e.name.toLowerCase()) ?? []),
-        ];
-        return allItems.some((n) =>
-          n.includes("eléctric") || n.includes("electric") || n.includes("carga") || n.includes("recarga") || n.includes("ev")
-        );
-      });
-    } else if (featureFilter === "wash") {
-      list = list.filter((f) => {
-        const allItems = [
-          ...f.services.map((s) => s.name.toLowerCase()),
-          ...(f.extras?.map((e) => e.name.toLowerCase()) ?? []),
-        ];
-        return allItems.some((n) => n.includes("lavado") || n.includes("limpieza") || n.includes("wash"));
-      });
-    }
-
-    // 3. Cancellation policy filter
-    if (cancellationFilter === "free_cancellation") {
-      list = list.filter((f) => (f.cancellation_policy?.free_cancellation_window_hours ?? 0) >= 24);
-    }
-
-    // 4. Max budget filter
-    if (maxBudgetCents !== null) {
-      list = list.filter((f) => {
-        const amount = f.server_quote?.customer_total_amount ?? f.services[0]?.price_amount ?? Infinity;
-        return amount <= maxBudgetCents;
-      });
-    }
-
-    // 5. Sorting
-    if (sortBy === "price_asc") {
-      list.sort((a, b) => {
-        const pA = a.server_quote?.customer_total_amount ?? a.services[0]?.price_amount ?? Infinity;
-        const pB = b.server_quote?.customer_total_amount ?? b.services[0]?.price_amount ?? Infinity;
-        return pA - pB;
-      });
-    } else if (sortBy === "name_asc") {
-      list.sort((a, b) => a.name.localeCompare(b.name));
-    }
-
-    return list;
+    return applyAllSearchFilters(facilities, {
+      modality: modalityFilter,
+      feature: featureFilter,
+      cancellation: cancellationFilter,
+      maxBudgetCents,
+      sortBy,
+    });
   }, [facilities, modalityFilter, featureFilter, cancellationFilter, maxBudgetCents, sortBy]);
 
   const comparedFacilities = useMemo(() => {

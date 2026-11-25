@@ -9,8 +9,8 @@ import type { ServicePriceRule } from "@/types/domain";
 
 describe("Increment 8 & 8.1: Transactional Integrity, Hardening & Unified Quote", () => {
   const MAD_ID = "a0000000-0000-4000-a000-000000000001";
-  const entryAt = "2026-11-25T10:00:00Z";
-  const exitAt2d = "2026-11-27T10:00:00Z"; // 48 hours
+  const entryAt = "2026-12-10T10:00:00Z";
+  const exitAt2d = "2026-12-12T10:00:00Z"; // 48 hours
 
   const demoEntry = SYNTHETIC_DEMO_CATALOG.find((e) => e.facility.id === "demo-fac-valet-01")!;
   const service = demoEntry.facility.services[0];

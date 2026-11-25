@@ -1,25 +1,33 @@
 /**
  * Unit Tests for Market Search Multi-Dimensional Filtering and Neutral Sorting.
  *
- * Validates:
- * - Filtering by Modality (all, valet, shuttle).
- * - Filtering by Features (EV Charging, Car Wash).
- * - Filtering by Cancellation Policy (Free Cancellation >= 24h).
- * - Filtering by Max Budget limit.
- * - Neutral Price Sorting (lowest total customer amount first).
- * - Strict separation of manual consultation operators.
+ * Validates pure filter functions in src/lib/search/filters.ts:
+ * - filterByModality
+ * - filterByFeature (structured fields)
+ * - filterByCancellation
+ * - filterByBudget
+ * - sortFacilities
+ * - applyAllSearchFilters
  */
 
 import { describe, it, expect } from "vitest";
 import type { FacilityWithServices, PriceSnapshotV3 } from "@/types/domain";
+import {
+  filterByModality,
+  filterByFeature,
+  filterByCancellation,
+  filterByBudget,
+  sortFacilities,
+  applyAllSearchFilters,
+} from "@/lib/search/filters";
 
 function createMockFacility(opts: {
   id: string;
   name: string;
   modality: "valet" | "shuttle";
   totalAmountCents?: number;
-  hasEv?: boolean;
-  hasWash?: boolean;
+  evStatus?: "verified" | "not_available" | "unknown";
+  washStatus?: "verified" | "not_available" | "unknown";
   freeCancHours?: number;
 }): FacilityWithServices {
   const quote: PriceSnapshotV3 | undefined = opts.totalAmountCents
@@ -61,6 +69,10 @@ function createMockFacility(opts: {
     longitude: -3.56,
     total_capacity: 50,
     operational_buffer: 5,
+    feature_ev_charging: opts.evStatus ?? "unknown",
+    feature_car_wash: opts.washStatus ?? "unknown",
+    feature_covered: "unknown",
+    feature_cctv_24h: "unknown",
     active: true,
     created_at: "2026-10-01T00:00:00Z",
     updated_at: "2026-10-26T00:00:00Z",
@@ -75,7 +87,7 @@ function createMockFacility(opts: {
         facility_id: opts.id,
         name: opts.modality === "valet" ? "Valet en Terminal" : "Lanzadera Shuttle",
         description: "Servicio de parking",
-        price_amount: opts.totalAmountCents ?? 2000,
+        price_amount: opts.totalAmountCents ?? 0,
         currency: "EUR",
         pricing_unit: "per_day",
         active: true,
@@ -83,161 +95,109 @@ function createMockFacility(opts: {
         updated_at: "2026-10-26T00:00:00Z",
       },
     ],
-    extras: [
-      ...(opts.hasEv
-        ? [
-            {
-              id: `extra-ev-${opts.id}`,
-              facility_id: opts.id,
-              service_id: null,
-              name: "Recarga Vehículo Eléctrico (EV)",
-              description: "Carga completa",
-              price_amount: 2500,
-              currency: "EUR",
-              pricing_unit: "per_stay" as const,
-              is_mandatory: false,
-              max_quantity: 1,
-              active: true,
-              created_at: "2026-10-01T00:00:00Z",
-              updated_at: "2026-10-26T00:00:00Z",
-            },
-          ]
-        : []),
-      ...(opts.hasWash
-        ? [
-            {
-              id: `extra-wash-${opts.id}`,
-              facility_id: opts.id,
-              service_id: null,
-              name: "Lavado Exterior a Mano",
-              description: "Lavado completo",
-              price_amount: 1900,
-              currency: "EUR",
-              pricing_unit: "per_stay" as const,
-              is_mandatory: false,
-              max_quantity: 1,
-              active: true,
-              created_at: "2026-10-01T00:00:00Z",
-              updated_at: "2026-10-26T00:00:00Z",
-            },
-          ]
-        : []),
-    ],
+    extras: [],
     cancellation_policy: opts.freeCancHours !== undefined
       ? {
           id: `canc-${opts.id}`,
           operator_id: `op-${opts.id}`,
-          legal_document_id: "doc-01",
+          legal_document_id: "00000000-0000-4000-b000-000000000003",
           free_cancellation_window_hours: opts.freeCancHours,
           late_cancellation_fee_bps: 5000,
           no_show_fee_bps: 10000,
           allow_modifications: true,
           modification_window_hours: 2,
           active: true,
-          created_at: "2026-10-01T00:00:00Z",
+          created_at: "2026-10-26T00:00:00Z",
         }
-      : undefined,
+      : null,
     server_quote: quote,
   };
 }
 
-describe("Market Search Multi-Dimensional Filters", () => {
-  const facValetLow = createMockFacility({
+describe("Market Search Multi-Dimensional Filtering & Sorting", () => {
+  const facValet1 = createMockFacility({
     id: "fac-1",
-    name: "AeroValet Express VIP",
+    name: "VIP Valet Express",
     modality: "valet",
-    totalAmountCents: 4500, // 45.00 EUR
-    hasEv: true,
-    hasWash: false,
+    totalAmountCents: 4500,
+    evStatus: "verified",
     freeCancHours: 24,
   });
 
-  const facValetHigh = createMockFacility({
+  const facShuttle1 = createMockFacility({
     id: "fac-2",
-    name: "Barajas Valet Luxury",
+    name: "LowCost Shuttle Lanzadera",
+    modality: "shuttle",
+    totalAmountCents: 2800,
+    washStatus: "verified",
+    freeCancHours: 12,
+  });
+
+  const facValet2 = createMockFacility({
+    id: "fac-3",
+    name: "AeroValet Premium Barajas",
     modality: "valet",
-    totalAmountCents: 9500, // 95.00 EUR
-    hasEv: true,
-    hasWash: true,
+    totalAmountCents: 5200,
+    evStatus: "verified",
+    washStatus: "verified",
     freeCancHours: 48,
   });
 
-  const facShuttleLow = createMockFacility({
-    id: "fac-3",
-    name: "Shuttle Barajas Economico",
-    modality: "shuttle",
-    totalAmountCents: 3200, // 32.00 EUR
-    hasEv: false,
-    hasWash: true,
-    freeCancHours: 24,
-  });
-
-  const facShuttleNonRefundable = createMockFacility({
+  const facManualConsult = createMockFacility({
     id: "fac-4",
-    name: "Shuttle Super LowCost",
-    modality: "shuttle",
-    totalAmountCents: 2800, // 28.00 EUR
-    hasEv: false,
-    hasWash: false,
-    freeCancHours: 0, // Non-refundable
+    name: "Parking Corporativo Flotas",
+    modality: "valet",
+    totalAmountCents: undefined, // Under consultation / no automated quote
+    freeCancHours: 0,
   });
 
-  const allFacilities = [facValetLow, facValetHigh, facShuttleLow, facShuttleNonRefundable];
+  const allFacilities = [facValet1, facShuttle1, facValet2, facManualConsult];
 
-  it("filters by modality accurately", () => {
-    const valetOnly = allFacilities.filter((f) => f.name.toLowerCase().includes("valet"));
-    expect(valetOnly).toHaveLength(2);
-    expect(valetOnly.map((f) => f.id)).toEqual(["fac-1", "fac-2"]);
+  it("filters facilities strictly by modality", () => {
+    const valets = filterByModality(allFacilities, "valet");
+    expect(valets.map((f) => f.id)).toEqual(["fac-1", "fac-3", "fac-4"]);
 
-    const shuttleOnly = allFacilities.filter((f) => f.name.toLowerCase().includes("shuttle"));
-    expect(shuttleOnly).toHaveLength(2);
-    expect(shuttleOnly.map((f) => f.id)).toEqual(["fac-3", "fac-4"]);
+    const shuttles = filterByModality(allFacilities, "shuttle");
+    expect(shuttles.map((f) => f.id)).toEqual(["fac-2"]);
   });
 
-  it("filters by features (EV Charging and Car Wash)", () => {
-    // EV Charging
-    const evFacilities = allFacilities.filter((f) =>
-      f.extras?.some((e) => e.name.toLowerCase().includes("ev") || e.name.toLowerCase().includes("eléctric"))
-    );
-    expect(evFacilities).toHaveLength(2);
-    expect(evFacilities.map((f) => f.id)).toEqual(["fac-1", "fac-2"]);
+  it("filters facilities by verified structured features only", () => {
+    const evParkings = filterByFeature(allFacilities, "ev");
+    expect(evParkings.map((f) => f.id)).toEqual(["fac-1", "fac-3"]);
 
-    // Car Wash
-    const washFacilities = allFacilities.filter((f) =>
-      f.extras?.some((e) => e.name.toLowerCase().includes("lavado"))
-    );
-    expect(washFacilities).toHaveLength(2);
-    expect(washFacilities.map((f) => f.id)).toEqual(["fac-2", "fac-3"]);
+    const washParkings = filterByFeature(allFacilities, "wash");
+    expect(washParkings.map((f) => f.id)).toEqual(["fac-2", "fac-3"]);
   });
 
-  it("filters by cancellation policy (Free Cancellation >= 24h)", () => {
-    const freeCancFacilities = allFacilities.filter(
-      (f) => (f.cancellation_policy?.free_cancellation_window_hours ?? 0) >= 24
-    );
-    expect(freeCancFacilities).toHaveLength(3);
-    expect(freeCancFacilities.map((f) => f.id)).toEqual(["fac-1", "fac-2", "fac-3"]);
+  it("filters facilities with free cancellation window >= 24h", () => {
+    const flexible = filterByCancellation(allFacilities, "free_cancellation");
+    expect(flexible.map((f) => f.id)).toEqual(["fac-1", "fac-3"]);
   });
 
-  it("filters by budget limit (max total cents)", () => {
-    const max50Eur = allFacilities.filter(
-      (f) => (f.server_quote?.customer_total_amount ?? Infinity) <= 5000
-    );
-    expect(max50Eur).toHaveLength(3); // 28€, 32€, 45€
+  it("filters facilities within a maximum budget", () => {
+    const budget3000 = filterByBudget(allFacilities, 3000);
+    expect(budget3000.map((f) => f.id)).toEqual(["fac-2"]);
 
-    const max30Eur = allFacilities.filter(
-      (f) => (f.server_quote?.customer_total_amount ?? Infinity) <= 3000
-    );
-    expect(max30Eur).toHaveLength(1); // 28€ (fac-4)
+    const budget5000 = filterByBudget(allFacilities, 5000);
+    expect(budget5000.map((f) => f.id)).toEqual(["fac-1", "fac-2"]);
   });
 
-  it("sorts by price in strict ascending order (neutral consumer ranking)", () => {
-    const sorted = [...allFacilities].sort((a, b) => {
-      const pA = a.server_quote?.customer_total_amount ?? Infinity;
-      const pB = b.server_quote?.customer_total_amount ?? Infinity;
-      return pA - pB;
+  it("sorts facilities strictly by customer_total_amount ascending", () => {
+    const sorted = sortFacilities(allFacilities, "price_asc");
+    // fac-2 (2800) < fac-1 (4500) < fac-3 (5200) < fac-4 (Infinity)
+    expect(sorted.map((f) => f.id)).toEqual(["fac-2", "fac-1", "fac-3", "fac-4"]);
+  });
+
+  it("applies composite multi-criteria search filtering", () => {
+    const results = applyAllSearchFilters(allFacilities, {
+      modality: "valet",
+      feature: "ev",
+      cancellation: "free_cancellation",
+      maxBudgetCents: 5000,
+      sortBy: "price_asc",
     });
 
-    expect(sorted.map((f) => f.id)).toEqual(["fac-4", "fac-3", "fac-1", "fac-2"]);
-    expect(sorted.map((f) => f.server_quote?.customer_total_amount)).toEqual([2800, 3200, 4500, 9500]);
+    expect(results).toHaveLength(1);
+    expect(results[0].id).toBe("fac-1");
   });
 });

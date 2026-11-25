@@ -72,6 +72,8 @@ export interface Operator {
   updated_at: string;
 }
 
+export type FeatureVerificationStatus = "verified" | "not_available" | "unknown";
+
 export interface Facility {
   id: string;
   operator_id: string;
@@ -82,6 +84,11 @@ export interface Facility {
   longitude: number | null;
   total_capacity: number;
   operational_buffer: number;
+  feature_ev_charging?: FeatureVerificationStatus;
+  feature_car_wash?: FeatureVerificationStatus;
+  feature_covered?: FeatureVerificationStatus;
+  feature_cctv_24h?: FeatureVerificationStatus;
+  feature_evidence?: Record<string, unknown> | null;
   active: boolean;
   created_at: string;
   updated_at: string;
