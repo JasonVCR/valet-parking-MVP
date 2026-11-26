@@ -3,12 +3,7 @@
 import React from "react";
 import Image from "next/image";
 import type { FacilityWithServices, Service } from "@/types/domain";
-import {
-  computeBillableUnits,
-  computeTotalAmount,
-  formatMoney,
-} from "@/lib/pricing";
-import { calculateQuote } from "@/lib/pricing/engine";
+import { formatMoney } from "@/lib/pricing";
 import {
   CarFront,
   Bus,
@@ -45,40 +40,11 @@ export function ParkingCard({
 }: ParkingCardProps) {
   const primaryService = facility.services[0];
 
-  // Resolve quote: Prefer server_quote if provided; otherwise fallback to engine
-  const quote =
-    facility.server_quote ??
-    (primaryService
-      ? (() => {
-          try {
-            return calculateQuote({
-              serviceId: primaryService.id,
-              serviceName: primaryService.name,
-              basePriceAmount: primaryService.price_amount,
-              currency: primaryService.currency,
-              pricingUnit: primaryService.pricing_unit,
-              entryAt,
-              exitAt,
-              tariffBands: facility.tariff_bands,
-              availableExtras: facility.extras,
-            });
-          } catch {
-            return null;
-          }
-        })()
-      : null);
+  const quote = facility.server_quote ?? null;
 
-  const units = quote
-    ? quote.units
-    : primaryService
-    ? computeBillableUnits(primaryService.pricing_unit, entryAt, exitAt)
-    : 1;
+  const units = quote ? quote.units : 1;
 
-  const totalAmount = quote
-    ? quote.customer_total_amount
-    : primaryService
-    ? computeTotalAmount(primaryService.price_amount, units)
-    : 0;
+  const totalAmount = quote ? quote.customer_total_amount : 0;
 
   const currency =
     quote?.currency ?? primaryService?.currency ?? facility.operator.currency ?? "EUR";
@@ -97,8 +63,12 @@ export function ParkingCard({
     : "Cancelación según condiciones del operador.";
 
   const isValet =
-    facility.name.toLowerCase().includes("valet") ||
-    primaryService?.name.toLowerCase().includes("valet");
+    facility.modality === "valet"
+      ? true
+      : facility.modality === "shuttle"
+      ? false
+      : facility.name.toLowerCase().includes("valet") ||
+        primaryService?.name.toLowerCase().includes("valet");
 
   const heroImage = isValet
     ? "/images/valet_terminal_dropoff_1792282144660.jpg"
@@ -127,16 +97,9 @@ export function ParkingCard({
     !isSyntheticDemo &&
     quote?.tariff_source?.verification_status === "verified";
 
-  const allItemNames = [
-    ...facility.services.map((s) => s.name.toLowerCase()),
-    ...(facility.extras?.map((e) => e.name.toLowerCase()) ?? []),
-  ];
-  const hasEvCharge = allItemNames.some((n) =>
-    n.includes("eléctric") || n.includes("electric") || n.includes("carga") || n.includes("recarga") || n.includes("ev")
-  );
-  const hasWash = allItemNames.some((n) =>
-    n.includes("lavado") || n.includes("limpieza") || n.includes("wash")
-  );
+  const hasEvCharge = facility.feature_ev_charging === "verified";
+  const hasWash = facility.feature_car_wash === "verified";
+  const hasCovered = facility.feature_covered === "verified";
 
   return (
     <article
@@ -263,6 +226,16 @@ export function ParkingCard({
                 <span className="meta-feature">
                   <Sparkles size={13} className="feature-icon" />
                   Lavado disponible
+                </span>
+              </>
+            )}
+
+            {hasCovered && (
+              <>
+                <span className="meta-sep">•</span>
+                <span className="meta-feature">
+                  <ShieldCheck size={13} className="feature-icon" />
+                  Plaza cubierta
                 </span>
               </>
             )}

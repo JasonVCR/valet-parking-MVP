@@ -4,15 +4,16 @@
  * Implements an isolated, polite, and verifiable acquisition pipeline for airport
  * parking operators across target airports (MAD, BCN, AGP, ALC, VLC).
  *
- * Requirements:
- * 1. Eliminate artificial verification & generic prices. Unverified candidates -> pending_review, 0 bands.
- * 2. Provider architecture: Google Custom Search, Bing Web Search, SerpAPI, Operator Direct Feeds.
- *    Curated catalog is strictly a test fixture (`TestCuratedCatalogProvider`), not production default.
- * 3. Politeness & robots.txt compliance with path matching, user-agent specificity, and disallow precedence.
- * 4. Deterministic tariff normalization tracking operator, facility, service, modality,
- *    min/max duration, integer cents, currency, pricing unit, evidence snippet, and status.
- * 5. Robust RFC 4180 CSV parser with error reporting ({ validRecords, errors: [{ row, error }] }).
- * 6. Zod-validated JSON feed importer (`importTariffJsonFeed`).
+ * Security & Integrity Guarantees (Increment 8.3):
+ * 1. Zero invented/hardcoded prices: no fallback tariffs (no 2200c, 3800c, or 2000c).
+ * 2. Search snippets alone NEVER verify an operator or generate tariff bands.
+ * 3. SHA-256 content_hash is computed over actual downloaded page/feed content, never over URL.
+ * 4. Strict robots.txt compliance (Allow/Disallow longest-prefix specificity, Crawl-delay)
+ *    plus URL/SSRF validation and private/checkout path exclusion before any page fetch.
+ * 5. Domain-normalized deduplication (handles full URLs, excludes generic addresses,
+ *    flags ambiguous cases to manual review instead of silently dropping).
+ * 6. Feature verification requires individual verifiable evidence; otherwise remains 'unknown'.
+ * 7. TestCuratedCatalogProvider is forbidden in production and never the default provider.
  */
 
 import { createHash } from "crypto";
@@ -46,6 +47,80 @@ export function computeContentHash(content: string): string {
   return createHash("sha256").update(content.trim(), "utf8").digest("hex");
 }
 
+// ─── URL, Domain & Politeness Validation ──────────────────────────────────────
+
+const FORBIDDEN_CRAWL_PATH_PREFIXES = [
+  "/admin",
+  "/wp-admin",
+  "/checkout",
+  "/cart",
+  "/payment",
+  "/pago",
+  "/login",
+  "/signin",
+  "/account",
+  "/mi-cuenta",
+  "/private",
+  "/internal",
+  "/api/",
+];
+
+const PRIVATE_HOST_PATTERNS = [
+  /^localhost$/i,
+  /^127\./,
+  /^10\./,
+  /^192\.168\./,
+  /^172\.(1[6-9]|2\d|3[0-1])\./,
+  /^169\.254\./,
+  /^0\.0\.0\.0$/,
+  /^::1$/,
+  /^\[::1\]$/,
+  /\.local$/i,
+  /\.internal$/i,
+];
+
+export function extractNormalizedDomain(input: string): string {
+  const trimmed = input.trim();
+  if (!trimmed) return "";
+  try {
+    const withProtocol = /^https?:\/\//i.test(trimmed) ? trimmed : `https://${trimmed}`;
+    const parsed = new URL(withProtocol);
+    return parsed.hostname.toLowerCase().replace(/^www\./, "");
+  } catch {
+    return trimmed
+      .toLowerCase()
+      .replace(/^https?:\/\//, "")
+      .replace(/^www\./, "")
+      .split("/")[0]
+      .split(":")[0];
+  }
+}
+
+export function validateOfficialUrl(rawUrl: string): { valid: boolean; url?: URL; reason?: string } {
+  try {
+    const parsed = new URL(rawUrl.trim());
+    if (parsed.protocol !== "https:" && parsed.protocol !== "http:") {
+      return { valid: false, reason: `Esquema no permitido: ${parsed.protocol}` };
+    }
+    const hostname = parsed.hostname.toLowerCase();
+    if (!hostname || !hostname.includes(".")) {
+      return { valid: false, reason: `Dominio inválido: ${hostname}` };
+    }
+    if (PRIVATE_HOST_PATTERNS.some((rx) => rx.test(hostname))) {
+      return { valid: false, reason: `Host privado o local prohibido: ${hostname}` };
+    }
+    const lowerPath = parsed.pathname.toLowerCase();
+    for (const forbidden of FORBIDDEN_CRAWL_PATH_PREFIXES) {
+      if (lowerPath === forbidden || lowerPath.startsWith(forbidden.endsWith("/") ? forbidden : `${forbidden}/`)) {
+        return { valid: false, reason: `Ruta privada/administrativa/checkout excluida: ${parsed.pathname}` };
+      }
+    }
+    return { valid: true, url: parsed };
+  } catch {
+    return { valid: false, reason: `URL malformada: ${rawUrl}` };
+  }
+}
+
 // ─── Discovered Candidates & Normalization Contracts ─────────────────────────
 
 export interface DiscoveredOperatorCandidate {
@@ -56,11 +131,15 @@ export interface DiscoveredOperatorCandidate {
   airportIata: string;
   modality: "valet" | "shuttle";
   address: string;
+  latitude?: number;
+  longitude?: number;
   phone?: string;
   email?: string;
   hasPublishedTariff: boolean;
   tariffSummary?: string;
   evidenceSnippet?: string;
+  rawHtmlContent?: string;
+  directTariffBands?: NormalizedTariffBandInput[];
 }
 
 export interface NormalizedTariffBandInput {
@@ -70,7 +149,7 @@ export interface NormalizedTariffBandInput {
   priceAmount: number; // integer minor units (euro cents)
   currency: string;
   pricingUnit: TariffBandPricingUnit;
-  evidenceSnippet?: string;
+  evidenceSnippet: string;
   vehicleCategory?: "standard" | "suv" | "van" | "motorcycle" | null;
 }
 
@@ -93,13 +172,17 @@ export interface IngestedTariffSource {
 
 export interface IngestedFacilityRecord {
   id: string;
+  domain: string;
   operatorName: string;
   operatorSlug: string;
   legalName?: string;
   airportIata: string;
   facilityName: string;
   address: string;
+  latitude?: number | null;
+  longitude?: number | null;
   modality: "valet" | "shuttle";
+  discoveryProvider: string;
   tariffSource: IngestedTariffSource;
   tariffBands: NormalizedTariffBandInput[];
   features: {
@@ -108,16 +191,18 @@ export interface IngestedFacilityRecord {
     covered: FeatureVerificationStatus;
     cctv24h: FeatureVerificationStatus;
   };
+  featureEvidence: Record<string, string>;
   cancellationPolicy: {
     freeCancellationWindowHours: number;
     lateCancellationFeeBps: number;
     isVerified: boolean;
+    evidence?: string;
   };
   verificationStatus: TariffVerificationStatus;
   reviewNotes?: string;
 }
 
-// ─── Politeness & Mature Robots.txt Parser ─────────────────────────────────────
+// ─── Politeness & RFC 9309 Robots.txt Parser ──────────────────────────────────
 
 export interface RobotsValidationResult {
   allowed: boolean;
@@ -126,8 +211,8 @@ export interface RobotsValidationResult {
 }
 
 /**
- * Validates whether a target operator URL permits indexing under standard robots.txt rules.
- * Supports User-agent specificity, Disallow paths, Allow overrides, and Crawl-delay.
+ * Validates whether a target operator URL permits indexing under standard RFC 9309 robots.txt rules.
+ * Supports User-agent specificity, Disallow/Allow longest-prefix precedence, and Crawl-delay.
  */
 export function validateRobotsRules(
   robotsTxtContent: string,
@@ -139,16 +224,15 @@ export function validateRobotsRules(
 
   let inTargetAgentBlock = false;
   let inWildcardBlock = false;
-  const agentDisallows: string[] = [];
-  const agentAllows: string[] = [];
-  const wildcardDisallows: string[] = [];
-  const wildcardAllows: string[] = [];
+  const agentRules: Array<{ type: "allow" | "disallow"; path: string }> = [];
+  const wildcardRules: Array<{ type: "allow" | "disallow"; path: string }> = [];
   let agentCrawlDelay: number | undefined;
   let wildcardCrawlDelay: number | undefined;
 
   for (const rawLine of lines) {
-    const line = rawLine.trim();
-    if (line.startsWith("#") || line.length === 0) continue;
+    const commentIdx = rawLine.indexOf("#");
+    const line = (commentIdx >= 0 ? rawLine.slice(0, commentIdx) : rawLine).trim();
+    if (line.length === 0) continue;
 
     const colonIdx = line.indexOf(":");
     if (colonIdx === -1) continue;
@@ -169,18 +253,18 @@ export function validateRobotsRules(
       }
     } else if (inTargetAgentBlock) {
       if (key === "disallow" && value.length > 0) {
-        agentDisallows.push(value);
+        agentRules.push({ type: "disallow", path: value });
       } else if (key === "allow" && value.length > 0) {
-        agentAllows.push(value);
+        agentRules.push({ type: "allow", path: value });
       } else if (key === "crawl-delay") {
         const sec = parseFloat(value);
         if (!isNaN(sec) && sec > 0) agentCrawlDelay = Math.round(sec * 1000);
       }
     } else if (inWildcardBlock) {
       if (key === "disallow" && value.length > 0) {
-        wildcardDisallows.push(value);
+        wildcardRules.push({ type: "disallow", path: value });
       } else if (key === "allow" && value.length > 0) {
-        wildcardAllows.push(value);
+        wildcardRules.push({ type: "allow", path: value });
       } else if (key === "crawl-delay") {
         const sec = parseFloat(value);
         if (!isNaN(sec) && sec > 0) wildcardCrawlDelay = Math.round(sec * 1000);
@@ -188,37 +272,228 @@ export function validateRobotsRules(
     }
   }
 
-  // Merge rules: agent-specific rules take precedence, but if a wildcard rule disallows
-  // and agent block does not explicitly allow it, both disallows are respected.
-  const disallows = Array.from(new Set([...agentDisallows, ...wildcardDisallows]));
-  const allows = Array.from(new Set([...agentAllows, ...wildcardAllows]));
+  // Merge wildcard and agent-specific rules, resolving conflicts by longest-prefix specificity
+  // (with agent-specific rules and Allow taking precedence on equal length).
+  const activeRules = [
+    ...wildcardRules.map((r) => ({ ...r, isAgentSpecific: false })),
+    ...agentRules.map((r) => ({ ...r, isAgentSpecific: true })),
+  ];
   const crawlDelayMs = agentCrawlDelay ?? wildcardCrawlDelay;
 
-  // Check explicit allows first
-  for (const allowedPath of allows) {
-    if (normalizedPath.startsWith(allowedPath)) {
-      return { allowed: true, crawlDelayMs };
+  let bestMatch: { type: "allow" | "disallow"; path: string; length: number; isAgentSpecific: boolean } | null = null;
+
+  for (const rule of activeRules) {
+    const matches = rule.path === "/" || normalizedPath.startsWith(rule.path);
+    if (!matches) continue;
+
+    const len = rule.path.length;
+    if (
+      !bestMatch ||
+      len > bestMatch.length ||
+      (len === bestMatch.length && rule.isAgentSpecific && !bestMatch.isAgentSpecific) ||
+      (len === bestMatch.length && rule.isAgentSpecific === bestMatch.isAgentSpecific && rule.type === "allow" && bestMatch.type === "disallow")
+    ) {
+      bestMatch = { type: rule.type, path: rule.path, length: len, isAgentSpecific: rule.isAgentSpecific };
     }
   }
 
-  // Check disallows
-  for (const disallowedPath of disallows) {
-    if (disallowedPath === "/" || normalizedPath.startsWith(disallowedPath)) {
+  if (bestMatch && bestMatch.type === "disallow") {
+    return {
+      allowed: false,
+      reason: `Ruta "${targetPath}" expresamente denegada por directiva Disallow: ${bestMatch.path}`,
+      crawlDelayMs,
+    };
+  }
+
+  return { allowed: true, crawlDelayMs };
+}
+
+// ─── Polite HTTP Page Fetcher & Tariff Extractor ──────────────────────────────
+
+export type FetchLike = (url: string, init?: RequestInit) => Promise<Response>;
+
+export interface CrawlFetchOptions {
+  fetchImpl?: FetchLike;
+  userAgent?: string;
+  defaultDelayMs?: number;
+  maxRetries?: number;
+  sleepImpl?: (ms: number) => Promise<void>;
+}
+
+const domainLastRequestAt = new Map<string, number>();
+
+async function defaultSleep(ms: number): Promise<void> {
+  await new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+export interface PageFetchResult {
+  fetched: boolean;
+  blockedByRobots: boolean;
+  content?: string;
+  contentHash?: string;
+  reason?: string;
+}
+
+/**
+ * Checks robots.txt on the target origin, enforces Crawl-delay and backoff,
+ * and downloads the operator's real page content.
+ */
+export async function fetchOperatorPageWithCompliance(
+  targetUrl: string,
+  options: CrawlFetchOptions = {}
+): Promise<PageFetchResult> {
+  const urlCheck = validateOfficialUrl(targetUrl);
+  if (!urlCheck.valid || !urlCheck.url) {
+    return { fetched: false, blockedByRobots: false, reason: urlCheck.reason };
+  }
+
+  const parsedUrl = urlCheck.url;
+  const fetchFn = options.fetchImpl ?? fetch;
+  const userAgent = options.userAgent ?? "AeroValetBot";
+  const sleepFn = options.sleepImpl ?? defaultSleep;
+  const maxRetries = options.maxRetries ?? 2;
+
+  // 1. Fetch and evaluate robots.txt
+  const robotsUrl = `${parsedUrl.origin}/robots.txt`;
+  let crawlDelayMs = options.defaultDelayMs ?? 1000;
+
+  try {
+    const robotsRes = await fetchFn(robotsUrl, {
+      headers: { "User-Agent": userAgent },
+      signal: AbortSignal.timeout(5000),
+    });
+    if (robotsRes.ok) {
+      const robotsTxt = await robotsRes.text();
+      const robotsCheck = validateRobotsRules(
+        robotsTxt,
+        `${parsedUrl.pathname}${parsedUrl.search}`,
+        userAgent
+      );
+      if (robotsCheck.crawlDelayMs && robotsCheck.crawlDelayMs > crawlDelayMs) {
+        crawlDelayMs = robotsCheck.crawlDelayMs;
+      }
+      if (!robotsCheck.allowed) {
+        return {
+          fetched: false,
+          blockedByRobots: true,
+          reason: robotsCheck.reason,
+        };
+      }
+    }
+  } catch {
+    // If robots.txt cannot be reached, proceed politely with default crawlDelayMs
+  }
+
+  // 2. Enforce domain rate limiting
+  const domain = parsedUrl.hostname.toLowerCase();
+  const lastAt = domainLastRequestAt.get(domain);
+  if (lastAt !== undefined) {
+    const elapsed = Date.now() - lastAt;
+    if (elapsed < crawlDelayMs) {
+      await sleepFn(crawlDelayMs - elapsed);
+    }
+  }
+
+  // 3. Download page with exponential backoff on 429/5xx
+  for (let attempt = 0; attempt <= maxRetries; attempt++) {
+    domainLastRequestAt.set(domain, Date.now());
+    try {
+      const res = await fetchFn(parsedUrl.toString(), {
+        headers: { "User-Agent": userAgent, Accept: "text/html,application/xhtml+xml,text/plain" },
+        signal: AbortSignal.timeout(10000),
+      });
+
+      if (res.status === 429 || res.status >= 500) {
+        if (attempt < maxRetries) {
+          const backoffMs = crawlDelayMs * Math.pow(2, attempt + 1);
+          await sleepFn(backoffMs);
+          continue;
+        }
+        return { fetched: false, blockedByRobots: false, reason: `HTTP ${res.status}` };
+      }
+
+      if (!res.ok) {
+        return { fetched: false, blockedByRobots: false, reason: `HTTP ${res.status}` };
+      }
+
+      const content = await res.text();
+      if (!content || content.trim().length === 0) {
+        return { fetched: false, blockedByRobots: false, reason: "Contenido vacío" };
+      }
+
       return {
-        allowed: false,
-        reason: `Ruta "${targetPath}" expresamente denegada por directiva Disallow: ${disallowedPath}`,
-        crawlDelayMs,
+        fetched: true,
+        blockedByRobots: false,
+        content,
+        contentHash: computeContentHash(content),
+      };
+    } catch (err) {
+      if (attempt < maxRetries) {
+        await sleepFn(crawlDelayMs * Math.pow(2, attempt + 1));
+        continue;
+      }
+      return {
+        fetched: false,
+        blockedByRobots: false,
+        reason: err instanceof Error ? err.message : "Error de red",
       };
     }
   }
 
-  return { allowed: true, crawlDelayMs };
+  return { fetched: false, blockedByRobots: false, reason: "Reintentos agotados" };
+}
+
+/**
+ * Extracts verifiable tariff bands strictly from downloaded HTML/text content.
+ * Requires explicit duration intervals AND explicit EUR prices. Never invents prices.
+ */
+export function extractTariffBandsFromContent(content: string): NormalizedTariffBandInput[] {
+  const text = content
+    .replace(/<script[\s\S]*?<\/script>/gi, " ")
+    .replace(/<style[\s\S]*?<\/style>/gi, " ")
+    .replace(/<[^>]+>/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+
+  if (!text) return [];
+
+  const bands: NormalizedTariffBandInput[] = [];
+  const seenIntervals = new Set<string>();
+
+  // Pattern: "<days> dia(s) ... <price> € / EUR"
+  const dayRegex = /(\d{1,2})\s*(?:d[ií]as?|d)\s*(?::|-|a|por)?\s*(\d{1,4}(?:[.,]\d{1,2})?)\s*(?:€|eur\b)/gi;
+  let match: RegExpExecArray | null;
+
+  while ((match = dayRegex.exec(text)) !== null) {
+    const days = parseInt(match[1], 10);
+    const priceEur = parseFloat(match[2].replace(",", "."));
+    if (isNaN(days) || days < 1 || days > 90 || isNaN(priceEur) || priceEur <= 0) continue;
+
+    const minHours = days === 1 ? 0 : (days - 1) * 24 + 1;
+    const maxHours = days * 24;
+    const key = `${minHours}-${maxHours}`;
+    if (seenIntervals.has(key)) continue;
+    seenIntervals.add(key);
+
+    bands.push({
+      name: `${days} ${days === 1 ? "Día" : "Días"}`,
+      minDurationHours: minHours,
+      maxDurationHours: maxHours,
+      priceAmount: Math.round(priceEur * 100),
+      currency: "EUR",
+      pricingUnit: "flat_stay",
+      evidenceSnippet: match[0].trim(),
+    });
+  }
+
+  return bands.sort((a, b) => a.minDurationHours - b.minDurationHours);
 }
 
 // ─── Search Provider Architecture ─────────────────────────────────────────────
 
 export interface WebSearchProvider {
   name: string;
+  isTestOnly?: boolean;
   searchOperatorSites(
     airport: TargetAirport,
     modality: "valet" | "shuttle"
@@ -248,7 +523,6 @@ export class GoogleCustomSearchProvider implements WebSearchProvider {
         "GoogleCustomSearchProvider requires GOOGLE_SEARCH_API_KEY and GOOGLE_SEARCH_CX environment variables"
       );
     }
-    // Real HTTP request implementation with abort controller and rate limiting
     const query = encodeURIComponent(`parking ${modality} aeropuerto ${airport.city} tarifas precios`);
     const endpoint = `https://www.googleapis.com/customsearch/v1?key=${this.apiKey}&cx=${this.cx}&q=${query}`;
     const res = await fetch(endpoint, { signal: AbortSignal.timeout(10000) });
@@ -258,13 +532,13 @@ export class GoogleCustomSearchProvider implements WebSearchProvider {
     const data = await res.json();
     const items = data.items || [];
     return items.map((item: { title: string; link: string; snippet?: string; displayLink?: string }) => ({
-      domain: item.displayLink || new URL(item.link).hostname,
+      domain: extractNormalizedDomain(item.displayLink || item.link),
       officialUrl: item.link,
       companyName: item.title,
       airportIata: airport.iataCode,
       modality,
-      address: `Cercanías aeropuerto ${airport.iataCode}`,
-      hasPublishedTariff: false, // Live web search results require subsequent content extraction
+      address: "",
+      hasPublishedTariff: false, // Search snippets NEVER verify tariffs
       evidenceSnippet: item.snippet,
     }));
   }
@@ -301,12 +575,12 @@ export class BingWebSearchProvider implements WebSearchProvider {
     const data = await res.json();
     const webPages = data.webPages?.value || [];
     return webPages.map((page: { name: string; url: string; snippet?: string }) => ({
-      domain: new URL(page.url).hostname,
+      domain: extractNormalizedDomain(page.url),
       officialUrl: page.url,
       companyName: page.name,
       airportIata: airport.iataCode,
       modality,
-      address: `Cercanías aeropuerto ${airport.iataCode}`,
+      address: "",
       hasPublishedTariff: false,
       evidenceSnippet: page.snippet,
     }));
@@ -341,12 +615,12 @@ export class SerpApiSearchProvider implements WebSearchProvider {
     const data = await res.json();
     const organic = data.organic_results || [];
     return organic.map((item: { title: string; link: string; snippet?: string }) => ({
-      domain: new URL(item.link).hostname,
+      domain: extractNormalizedDomain(item.link),
       officialUrl: item.link,
       companyName: item.title,
       airportIata: airport.iataCode,
       modality,
-      address: `Cercanías aeropuerto ${airport.iataCode}`,
+      address: "",
       hasPublishedTariff: false,
       evidenceSnippet: item.snippet,
     }));
@@ -355,7 +629,7 @@ export class SerpApiSearchProvider implements WebSearchProvider {
 
 /**
  * Operator Direct Feed Provider.
- * Reads verified partner feeds provided directly by airport parking operators.
+ * Reads structured partner feeds provided directly by airport parking operators.
  */
 export class OperatorDirectFeedProvider implements WebSearchProvider {
   name = "OperatorDirectFeedProvider";
@@ -374,10 +648,11 @@ export class OperatorDirectFeedProvider implements WebSearchProvider {
 /**
  * Test Curated Catalog Provider.
  * EXCLUSIVELY for test fixtures, offline validation, and deterministic suites.
- * NEVER default in production.
+ * NEVER allowed or default in production.
  */
 export class TestCuratedCatalogProvider implements WebSearchProvider {
   name = "TestCuratedCatalogProvider";
+  isTestOnly = true;
 
   async searchOperatorSites(
     airport: TargetAirport,
@@ -393,11 +668,8 @@ export class TestCuratedCatalogProvider implements WebSearchProvider {
           airportIata: "MAD",
           modality: "valet",
           address: "Terminales T1, T2 y T4 - Vía de Salidas, 28042 Madrid",
-          phone: "+34 912 345 678",
-          email: "contacto@aparcamadridvalet.es",
-          hasPublishedTariff: true,
-          tariffSummary: "Tarifa 2026: 1d 22.00€, 2d 38.00€",
-          evidenceSnippet: "Tabla oficial: 1 día 22€, 2 días 38€ (IVA incluido)",
+          hasPublishedTariff: false, // Fixture without real downloaded HTML/feed must remain pending_review
+          evidenceSnippet: "Fragmento de búsqueda: AparcaMadrid Valet T1-T4",
         },
         {
           domain: "corporativo-flotas-barajas.es",
@@ -407,9 +679,7 @@ export class TestCuratedCatalogProvider implements WebSearchProvider {
           airportIata: "MAD",
           modality: "valet",
           address: "Avenida de la Hispanidad s/n, 28042 Madrid",
-          phone: "+34 910 999 888",
-          email: "empresas@corporativo-flotas-barajas.es",
-          hasPublishedTariff: false, // Tariff under consultation
+          hasPublishedTariff: false,
         },
       ],
       BCN: [
@@ -421,11 +691,8 @@ export class TestCuratedCatalogProvider implements WebSearchProvider {
           airportIata: "BCN",
           modality: "valet",
           address: "Aeroport Josep Tarradellas Barcelona-El Prat, 08820 El Prat de Llobregat",
-          phone: "+34 931 234 567",
-          email: "reserves@bcnvaletexpress.es",
-          hasPublishedTariff: true,
-          tariffSummary: "1d 24€, 2d 40€",
-          evidenceSnippet: "Tarifas web oficial BCN Valet: estancia 24h a 24.00 EUR",
+          hasPublishedTariff: false,
+          evidenceSnippet: "Fragmento de búsqueda: BCN Valet Terminal T1/T2",
         },
       ],
     };
@@ -437,24 +704,43 @@ export class TestCuratedCatalogProvider implements WebSearchProvider {
 
 // ─── Provider Factory Helper ──────────────────────────────────────────────────
 
-export function createSearchProvider(providerName?: string): WebSearchProvider {
-  const chosen = providerName || process.env.MARKET_ACQUISITION_PROVIDER || "curated_test";
+export function createSearchProvider(
+  providerName?: string,
+  directFeedCandidates: DiscoveredOperatorCandidate[] = []
+): WebSearchProvider {
+  const chosen = (providerName || process.env.MARKET_ACQUISITION_PROVIDER || "").trim().toLowerCase();
 
-  switch (chosen.toLowerCase()) {
+  if (!chosen) {
+    throw new Error(
+      "PROVIDER_REQUIRED: Debe seleccionar explícitamente un proveedor real (google, bing, serpapi, direct_feed). No hay proveedor de pruebas predeterminado."
+    );
+  }
+
+  if ((chosen === "curated_test" || chosen === "test") && process.env.NODE_ENV === "production") {
+    throw new Error(
+      "TEST_PROVIDER_FORBIDDEN_IN_PRODUCTION: El proveedor sintético 'curated_test' está estrictamente prohibido en producción."
+    );
+  }
+
+  switch (chosen) {
     case "google":
       return new GoogleCustomSearchProvider();
     case "bing":
       return new BingWebSearchProvider();
     case "serpapi":
       return new SerpApiSearchProvider();
+    case "direct_feed":
+    case "operator_direct_feed":
+      return new OperatorDirectFeedProvider(directFeedCandidates);
     case "curated_test":
     case "test":
-    default:
       return new TestCuratedCatalogProvider();
+    default:
+      throw new Error(`UNKNOWN_PROVIDER: Proveedor de adquisición desconocido "${chosen}"`);
   }
 }
 
-// ─── Deduplication Engine ─────────────────────────────────────────────────────
+// ─── Deduplication & Ambiguity Detection Engine ───────────────────────────────
 
 function normalizeText(text: string): string {
   return text
@@ -464,13 +750,52 @@ function normalizeText(text: string): string {
     .replace(/[^a-z0-9]/g, "");
 }
 
-export function isDuplicateOperator(
-  a: { domain?: string; legalName?: string; address?: string },
-  b: { domain?: string; legalName?: string; address?: string }
-): boolean {
-  if (a.domain && b.domain && a.domain.toLowerCase() === b.domain.toLowerCase()) {
+const GENERIC_ADDRESS_FRAGMENTS = [
+  "cercaniasaeropuerto",
+  "recintoaeroportuario",
+  "zonaaeroportuaria",
+  "aeropuertomad",
+  "aeropuertobcn",
+  "aeropuertoagp",
+  "aeropuertoalc",
+  "aeropuertovlc",
+];
+
+function isGenericAddress(address?: string | null): boolean {
+  if (!address) return true;
+  const norm = normalizeText(address);
+  if (norm.length < 15) return true;
+  return GENERIC_ADDRESS_FRAGMENTS.some((frag) => norm.startsWith(frag) && norm.length < frag.length + 6);
+}
+
+export interface OperatorMatchIdentity {
+  domain?: string;
+  sourceUrl?: string;
+  legalName?: string;
+  companyName?: string;
+  address?: string;
+  latitude?: number | null;
+  longitude?: number | null;
+  airportIata?: string;
+  modality?: "valet" | "shuttle";
+}
+
+export function isDuplicateOperator(a: OperatorMatchIdentity, b: OperatorMatchIdentity): boolean {
+  // Airport & modality must match when both are provided so distinct airport branches aren't collapsed
+  if (a.airportIata && b.airportIata && a.airportIata !== b.airportIata) {
+    return false;
+  }
+  if (a.modality && b.modality && a.modality !== b.modality) {
+    return false;
+  }
+
+  const domA = extractNormalizedDomain(a.domain || a.sourceUrl || "");
+  const domB = extractNormalizedDomain(b.domain || b.sourceUrl || "");
+
+  if (domA && domB && domA === domB) {
     return true;
   }
+
   if (a.legalName && b.legalName) {
     const normA = normalizeText(a.legalName);
     const normB = normalizeText(b.legalName);
@@ -478,13 +803,47 @@ export function isDuplicateOperator(
       return true;
     }
   }
-  if (a.address && b.address) {
-    const normAddrA = normalizeText(a.address);
-    const normAddrB = normalizeText(b.address);
-    if (normAddrA.length > 10 && normAddrA === normAddrB) {
+
+  if (
+    typeof a.latitude === "number" &&
+    typeof a.longitude === "number" &&
+    typeof b.latitude === "number" &&
+    typeof b.longitude === "number" &&
+    Math.abs(a.latitude - b.latitude) < 0.001 &&
+    Math.abs(a.longitude - b.longitude) < 0.001
+  ) {
+    return true;
+  }
+
+  if (!isGenericAddress(a.address) && !isGenericAddress(b.address)) {
+    const normAddrA = normalizeText(a.address!);
+    const normAddrB = normalizeText(b.address!);
+    if (normAddrA === normAddrB) {
       return true;
     }
   }
+
+  return false;
+}
+
+export function isAmbiguousOperatorMatch(a: OperatorMatchIdentity, b: OperatorMatchIdentity): boolean {
+  if (isDuplicateOperator(a, b)) return false;
+
+  const sameAirportAndModality =
+    (!a.airportIata || !b.airportIata || a.airportIata === b.airportIata) &&
+    (!a.modality || !b.modality || a.modality === b.modality);
+
+  if (!sameAirportAndModality) return false;
+
+  // Same normalized company name but different domain -> ambiguous, needs manual review
+  if (a.companyName && b.companyName) {
+    const compA = normalizeText(a.companyName);
+    const compB = normalizeText(b.companyName);
+    if (compA.length > 6 && compA === compB) {
+      return true;
+    }
+  }
+
   return false;
 }
 
@@ -500,9 +859,6 @@ export interface CsvImportResult {
   errors: CsvParseError[];
 }
 
-/**
- * Standard RFC 4180 CSV tokenizer supporting quotes, escaped quotes (""), embedded newlines, and commas.
- */
 export function tokenizeRfc4180Csv(csvText: string): string[][] {
   const rows: string[][] = [];
   let currentRow: string[] = [];
@@ -517,7 +873,7 @@ export function tokenizeRfc4180Csv(csvText: string): string[][] {
       if (char === '"') {
         if (nextChar === '"') {
           currentField += '"';
-          i++; // Skip escaped quote
+          i++;
         } else {
           inQuotes = false;
         }
@@ -555,10 +911,25 @@ export function tokenizeRfc4180Csv(csvText: string): string[][] {
   return rows.filter((r) => r.length > 0 && r.some((c) => c.trim().length > 0));
 }
 
-/**
- * Parses and validates an operator tariff CSV document with strict schema enforcement,
- * returning both valid ingested records and individual row errors without silently dropping data.
- */
+function resolveFeatureWithEvidence(
+  declaredStatus: string | undefined,
+  evidenceText: string | undefined
+): { status: FeatureVerificationStatus; evidence?: string } {
+  const trimmedEvidence = (evidenceText ?? "").trim();
+  const normalized = (declaredStatus ?? "").trim().toLowerCase();
+
+  if (normalized === "not_available" && trimmedEvidence.length >= 5) {
+    return { status: "not_available", evidence: trimmedEvidence };
+  }
+
+  // Only allow 'verified' when individual verifiable evidence is provided
+  if ((normalized === "verified" || normalized === "true") && trimmedEvidence.length >= 5) {
+    return { status: "verified", evidence: trimmedEvidence };
+  }
+
+  return { status: "unknown" };
+}
+
 export function importTariffCsv(
   csvContent: string,
   retrievedAt = new Date().toISOString()
@@ -606,6 +977,13 @@ export function importTariffCsv(
       continue;
     }
 
+    const sourceUrl = rowMap["source_url"];
+    const urlCheck = validateOfficialUrl(sourceUrl);
+    if (!urlCheck.valid) {
+      errors.push({ row: r, error: `source_url inválida: ${urlCheck.reason}` });
+      continue;
+    }
+
     const minHours = parseInt(rowMap["min_hours"], 10);
     const maxHours = parseInt(rowMap["max_hours"], 10);
     const priceEuros = parseFloat(rowMap["price_eur"]);
@@ -618,15 +996,15 @@ export function importTariffCsv(
       errors.push({ row: r, error: `max_hours (${maxHours}) debe ser estrictamente mayor que min_hours (${minHours})` });
       continue;
     }
-    if (isNaN(priceEuros) || priceEuros < 0) {
+    if (isNaN(priceEuros) || priceEuros <= 0) {
       errors.push({ row: r, error: `price_eur debe ser un número positivo (recibido: "${rowMap["price_eur"]}")` });
       continue;
     }
 
     const opSlug = rowMap["operator_slug"] || opName.toLowerCase().replace(/[^a-z0-9]/g, "-");
-    const sourceUrl = rowMap["source_url"];
     const modality = (rowMap["modality"]?.toLowerCase() === "shuttle" ? "shuttle" : "valet") as "valet" | "shuttle";
-    const address = rowMap["address"] || `Recinto aeroportuario ${airportIata}`;
+    const domain = extractNormalizedDomain(sourceUrl);
+    const address = rowMap["address"] || "";
     const priceAmountCents = Math.round(priceEuros * 100);
     const bandPricingUnit: TariffBandPricingUnit =
       rowMap["pricing_unit"] === "per_day" ? "per_day" : "flat_stay";
@@ -638,28 +1016,46 @@ export function importTariffCsv(
       priceAmount: priceAmountCents,
       currency: "EUR",
       pricingUnit: bandPricingUnit,
-      evidenceSnippet: `Línea CSV ${r}: ${minHours}h-${maxHours}h @ ${priceEuros} EUR`,
+      evidenceSnippet: rowMap["evidence_snippet"] || `Línea CSV ${r}: ${minHours}h-${maxHours}h @ ${priceEuros} EUR`,
     };
 
-    if (!recordsByOperator[opSlug]) {
-      recordsByOperator[opSlug] = {
+    if (!recordsByOperator[`${opSlug}-${airportIata}-${modality}`]) {
+      const evRes = resolveFeatureWithEvidence(rowMap["ev_charging"], rowMap["ev_charging_evidence"]);
+      const washRes = resolveFeatureWithEvidence(rowMap["car_wash"], rowMap["car_wash_evidence"]);
+      const covRes = resolveFeatureWithEvidence(rowMap["covered"], rowMap["covered_evidence"]);
+      const cctvRes = resolveFeatureWithEvidence(rowMap["cctv_24h"], rowMap["cctv_24h_evidence"]);
+
+      const featureEvidence: Record<string, string> = {};
+      if (evRes.evidence) featureEvidence.ev_charging = evRes.evidence;
+      if (washRes.evidence) featureEvidence.car_wash = washRes.evidence;
+      if (covRes.evidence) featureEvidence.covered = covRes.evidence;
+      if (cctvRes.evidence) featureEvidence.cctv_24h = cctvRes.evidence;
+
+      const cancHours = parseInt(rowMap["free_canc_hours"] || "0", 10);
+      const cancEvidence = (rowMap["cancellation_evidence"] ?? "").trim();
+
+      recordsByOperator[`${opSlug}-${airportIata}-${modality}`] = {
         id: `fac-${opSlug}`,
+        domain,
         operatorName: opName,
         operatorSlug: opSlug,
         airportIata,
         facilityName: `${opName} (${modality === "valet" ? "Valet" : "Shuttle"})`,
         address,
         modality,
+        discoveryProvider: "csv_import",
         features: {
-          evCharging: rowMap["ev_charging"] === "verified" || rowMap["ev_charging"] === "true" ? "verified" : "unknown",
-          carWash: rowMap["car_wash"] === "verified" || rowMap["car_wash"] === "true" ? "verified" : "unknown",
-          covered: rowMap["covered"] === "verified" || rowMap["covered"] === "true" ? "verified" : "unknown",
-          cctv24h: "unknown",
+          evCharging: evRes.status,
+          carWash: washRes.status,
+          covered: covRes.status,
+          cctv24h: cctvRes.status,
         },
+        featureEvidence,
         cancellationPolicy: {
-          freeCancellationWindowHours: parseInt(rowMap["free_canc_hours"] || "0", 10),
+          freeCancellationWindowHours: isNaN(cancHours) ? 0 : cancHours,
           lateCancellationFeeBps: 5000,
-          isVerified: false,
+          isVerified: cancEvidence.length >= 5,
+          evidence: cancEvidence || undefined,
         },
         tariffSource: {
           id: `src-${opSlug}-${contentHash.slice(0, 8)}`,
@@ -670,7 +1066,7 @@ export function importTariffCsv(
           acquisitionMode: "csv",
           contentHash,
           retrievedAt,
-          verificationStatus: "pending_review", // Do not auto-verify on import
+          verificationStatus: "pending_review", // Never auto-verify on import
           provenanceNotes: `Importación CSV con hash ${contentHash}`,
           rawPayload: { rowCount: rows.length - 1 },
         },
@@ -679,7 +1075,7 @@ export function importTariffCsv(
       };
     }
 
-    recordsByOperator[opSlug].tariffBands.push(band);
+    recordsByOperator[`${opSlug}-${airportIata}-${modality}`].tariffBands.push(band);
   }
 
   return {
@@ -707,21 +1103,32 @@ export const TariffJsonFeedSchema = z.object({
     covered: z.enum(["verified", "not_available", "unknown"]).default("unknown"),
     cctv24h: z.enum(["verified", "not_available", "unknown"]).default("unknown"),
   }),
+  featureEvidence: z
+    .object({
+      evCharging: z.string().optional(),
+      carWash: z.string().optional(),
+      covered: z.string().optional(),
+      cctv24h: z.string().optional(),
+    })
+    .optional(),
   cancellationPolicy: z.object({
     freeCancellationWindowHours: z.number().int().nonnegative(),
     lateCancellationFeeBps: z.number().int().min(0).max(10000),
+    evidence: z.string().optional(),
   }),
-  tariffBands: z.array(
-    z.object({
-      name: z.string().min(1),
-      minDurationHours: z.number().int().nonnegative(),
-      maxDurationHours: z.number().int().positive(),
-      priceAmountCents: z.number().int().positive(),
-      currency: z.literal("EUR"),
-      pricingUnit: z.enum(["flat_stay", "per_day"]),
-      evidenceSnippet: z.string().min(3),
-    })
-  ).min(1),
+  tariffBands: z
+    .array(
+      z.object({
+        name: z.string().min(1),
+        minDurationHours: z.number().int().nonnegative(),
+        maxDurationHours: z.number().int().positive(),
+        priceAmountCents: z.number().int().positive(),
+        currency: z.literal("EUR"),
+        pricingUnit: z.enum(["flat_stay", "per_day"]),
+        evidenceSnippet: z.string().min(3),
+      })
+    )
+    .min(1),
 });
 
 export type TariffJsonFeedInput = z.infer<typeof TariffJsonFeedSchema>;
@@ -733,41 +1140,70 @@ export function importTariffJsonFeed(
   const parsed = JSON.parse(jsonContent);
   const validated = TariffJsonFeedSchema.parse(parsed);
 
-  // Validate intervals
+  const urlCheck = validateOfficialUrl(validated.operator.sourceUrl);
+  if (!urlCheck.valid) {
+    throw new Error(`sourceUrl inválida en JSON feed: ${urlCheck.reason}`);
+  }
+
   for (const band of validated.tariffBands) {
     if (band.maxDurationHours <= band.minDurationHours) {
-      throw new Error(`Intervalo inválido: maxDurationHours (${band.maxDurationHours}) <= minDurationHours (${band.minDurationHours})`);
+      throw new Error(
+        `Intervalo inválido: maxDurationHours (${band.maxDurationHours}) <= minDurationHours (${band.minDurationHours})`
+      );
     }
   }
 
   const contentHash = computeContentHash(jsonContent);
   const op = validated.operator;
+  const domain = extractNormalizedDomain(op.sourceUrl);
+
+  const evRes = resolveFeatureWithEvidence(validated.features.evCharging, validated.featureEvidence?.evCharging);
+  const washRes = resolveFeatureWithEvidence(validated.features.carWash, validated.featureEvidence?.carWash);
+  const covRes = resolveFeatureWithEvidence(validated.features.covered, validated.featureEvidence?.covered);
+  const cctvRes = resolveFeatureWithEvidence(validated.features.cctv24h, validated.featureEvidence?.cctv24h);
+
+  const featureEvidence: Record<string, string> = {};
+  if (evRes.evidence) featureEvidence.ev_charging = evRes.evidence;
+  if (washRes.evidence) featureEvidence.car_wash = washRes.evidence;
+  if (covRes.evidence) featureEvidence.covered = covRes.evidence;
+  if (cctvRes.evidence) featureEvidence.cctv_24h = cctvRes.evidence;
+
+  const cancEvidence = (validated.cancellationPolicy.evidence ?? "").trim();
 
   return {
     id: `fac-${op.slug}`,
+    domain,
     operatorName: op.name,
     operatorSlug: op.slug,
     legalName: op.legalName,
-    airportIata: op.airportIata,
+    airportIata: op.airportIata.toUpperCase(),
     facilityName: `${op.name} (${op.modality === "valet" ? "Valet" : "Shuttle"})`,
     address: op.address,
     modality: op.modality,
-    features: validated.features,
+    discoveryProvider: "api_feed",
+    features: {
+      evCharging: evRes.status,
+      carWash: washRes.status,
+      covered: covRes.status,
+      cctv24h: cctvRes.status,
+    },
+    featureEvidence,
     cancellationPolicy: {
       freeCancellationWindowHours: validated.cancellationPolicy.freeCancellationWindowHours,
       lateCancellationFeeBps: validated.cancellationPolicy.lateCancellationFeeBps,
-      isVerified: true,
+      isVerified: cancEvidence.length >= 5,
+      evidence: cancEvidence || undefined,
     },
     tariffSource: {
       id: `src-${op.slug}-${contentHash.slice(0, 8)}`,
       operatorId: `op-${op.slug}`,
-      sourceName: `Feed JSON Verificado — ${op.name}`,
+      sourceName: `Feed JSON — ${op.name}`,
       sourceUrl: op.sourceUrl,
       sourceType: "api_feed",
       acquisitionMode: "api",
       contentHash,
       retrievedAt,
-      verificationStatus: "verified",
+      verificationStatus: "pending_review", // Must go through verification workflow before becoming active
       provenanceNotes: `Feed estructurado validado con hash ${contentHash}`,
       rawPayload: parsed,
     },
@@ -780,7 +1216,7 @@ export function importTariffJsonFeed(
       pricingUnit: b.pricingUnit,
       evidenceSnippet: b.evidenceSnippet,
     })),
-    verificationStatus: "verified",
+    verificationStatus: "pending_review",
   };
 }
 
@@ -795,10 +1231,17 @@ export interface IngestionRunResult {
   records: IngestedFacilityRecord[];
 }
 
+export interface IngestionPipelineOptions {
+  fetchPages?: boolean;
+  crawlOptions?: CrawlFetchOptions;
+}
+
 export async function runMarketIngestionPipeline(
   targetAirports: TargetAirport[] = TARGET_AIRPORTS,
-  provider: WebSearchProvider = createSearchProvider()
+  provider?: WebSearchProvider,
+  options: IngestionPipelineOptions = {}
 ): Promise<IngestionRunResult> {
+  const activeProvider = provider ?? createSearchProvider();
   const resultRecords: IngestedFacilityRecord[] = [];
   let totalCandidates = 0;
   let manualCount = 0;
@@ -806,122 +1249,154 @@ export async function runMarketIngestionPipeline(
 
   for (const airport of targetAirports) {
     for (const modality of ["valet", "shuttle"] as const) {
-      const candidates = await provider.searchOperatorSites(airport, modality);
+      const candidates = await activeProvider.searchOperatorSites(airport, modality);
       totalCandidates += candidates.length;
 
       for (const cand of candidates) {
-        // 1. Deduplication check against already ingested records
+        const normalizedDomain = extractNormalizedDomain(cand.domain || cand.officialUrl);
+        const candIdentity: OperatorMatchIdentity = {
+          domain: normalizedDomain,
+          sourceUrl: cand.officialUrl,
+          legalName: cand.legalName,
+          companyName: cand.companyName,
+          address: cand.address,
+          latitude: cand.latitude,
+          longitude: cand.longitude,
+          airportIata: airport.iataCode,
+          modality: cand.modality,
+        };
+
+        // 1. Exact duplicate check against already ingested records
         const duplicate = resultRecords.find((rec) =>
-          isDuplicateOperator(
-            { domain: cand.domain, legalName: cand.legalName, address: cand.address },
-            { domain: rec.tariffSource.sourceUrl, legalName: rec.legalName, address: rec.address }
-          )
+          isDuplicateOperator(candIdentity, {
+            domain: rec.domain,
+            sourceUrl: rec.tariffSource.sourceUrl,
+            legalName: rec.legalName,
+            companyName: rec.operatorName,
+            address: rec.address,
+            latitude: rec.latitude,
+            longitude: rec.longitude,
+            airportIata: rec.airportIata,
+            modality: rec.modality,
+          })
         );
 
         if (duplicate) continue;
 
-        const slug = cand.domain.replace(/[^a-z0-9]/g, "-");
-        const sourceHash = computeContentHash(cand.officialUrl);
+        // 2. Ambiguous match check -> flag for manual review instead of silent drop
+        const isAmbiguous = resultRecords.some((rec) =>
+          isAmbiguousOperatorMatch(candIdentity, {
+            domain: rec.domain,
+            sourceUrl: rec.tariffSource.sourceUrl,
+            legalName: rec.legalName,
+            companyName: rec.operatorName,
+            address: rec.address,
+            latitude: rec.latitude,
+            longitude: rec.longitude,
+            airportIata: rec.airportIata,
+            modality: rec.modality,
+          })
+        );
 
-        // Requirement 1 & 3: Operators without parsed evidence or downloaded tables
-        // default to 0 tariff bands and pending_review. NO GENERIC INVENTED PRICES!
-        if (!cand.hasPublishedTariff || !cand.evidenceSnippet) {
-          manualCount++;
-          resultRecords.push({
-            id: `manual-fac-${slug}`,
-            operatorName: cand.companyName,
-            operatorSlug: slug,
-            legalName: cand.legalName,
-            airportIata: airport.iataCode,
-            facilityName: `${cand.companyName} (${cand.modality === "valet" ? "Valet" : "Shuttle"})`,
-            address: cand.address,
-            modality: cand.modality,
-            features: {
-              evCharging: "unknown",
-              carWash: "unknown",
-              covered: "unknown",
-              cctv24h: "unknown",
-            },
-            cancellationPolicy: {
-              freeCancellationWindowHours: 0,
-              lateCancellationFeeBps: 10000,
-              isVerified: false,
-            },
-            tariffSource: {
-              id: `src-${slug}`,
-              operatorId: `op-${slug}`,
-              sourceName: `Ficha Oficial — ${cand.companyName}`,
-              sourceUrl: cand.officialUrl,
-              sourceType: "official_website",
-              acquisitionMode: "web_extraction",
-              contentHash: sourceHash,
-              retrievedAt: new Date().toISOString(),
-              verificationStatus: "pending_review",
-              provenanceNotes: "Operador identificado pero sin tabla de tarifas descargada y contrastada.",
-              rawPayload: { summary: cand.tariffSummary },
-            },
-            tariffBands: [],
-            verificationStatus: "pending_review",
-            reviewNotes: "Tarifa bajo consulta directa. No generar holds automáticos.",
-          });
-          continue;
+        const slug = normalizedDomain.replace(/[^a-z0-9]/g, "-") || "unknown-op";
+
+        // 3. Real page fetch with robots.txt compliance (when enabled or rawHtmlContent provided)
+        let downloadedContent = cand.rawHtmlContent ?? "";
+        let blockedReason: string | undefined;
+
+        if (!downloadedContent && options.fetchPages) {
+          const fetchRes = await fetchOperatorPageWithCompliance(cand.officialUrl, options.crawlOptions);
+          if (fetchRes.fetched && fetchRes.content) {
+            downloadedContent = fetchRes.content;
+          } else {
+            blockedReason = fetchRes.reason;
+          }
         }
 
-        // Verified candidate with actual evidence snippet
+        // Compute SHA-256 over real downloaded content (or candidate payload when no page was downloaded)
+        const contentToHash =
+          downloadedContent.length > 0
+            ? downloadedContent
+            : JSON.stringify({
+                domain: normalizedDomain,
+                companyName: cand.companyName,
+                evidenceSnippet: cand.evidenceSnippet ?? "",
+                airportIata: airport.iataCode,
+                modality: cand.modality,
+              });
+        const contentHash = computeContentHash(contentToHash);
+
+        // Extract real tariff bands only from downloaded HTML or explicit direct feed bands
+        const extractedBands =
+          cand.directTariffBands && cand.directTariffBands.length > 0
+            ? cand.directTariffBands
+            : downloadedContent.length > 0
+            ? extractTariffBandsFromContent(downloadedContent)
+            : [];
+
+        let status: TariffVerificationStatus = "pending_review";
+        if (isAmbiguous) {
+          status = "flagged_ambiguous";
+          ambiguousCount++;
+        } else {
+          manualCount++;
+        }
+
+        const reviewNotes = isAmbiguous
+          ? "Coincidencia ambigua detectada con otro candidato del mismo aeropuerto/modalidad. Requiere revisión manual."
+          : blockedReason
+          ? `Descarga omitida (${blockedReason}). Tarifa bajo consulta o pendiente de revisión manual.`
+          : extractedBands.length === 0
+          ? "Tarifa bajo consulta directa o pendiente de extracción/verificación. No se generan tarifas inventadas."
+          : "Bandas extraídas del contenido real pendientes de verificación humana antes de publicación.";
+
         resultRecords.push({
-          id: `fac-${slug}`,
+          id: `cand-${slug}-${airport.iataCode.toLowerCase()}-${cand.modality}`,
+          domain: normalizedDomain,
           operatorName: cand.companyName,
           operatorSlug: slug,
           legalName: cand.legalName,
           airportIata: airport.iataCode,
           facilityName: `${cand.companyName} (${cand.modality === "valet" ? "Valet" : "Shuttle"})`,
-          address: cand.address,
+          address: cand.address || "",
+          latitude: cand.latitude ?? null,
+          longitude: cand.longitude ?? null,
           modality: cand.modality,
+          discoveryProvider: activeProvider.name,
           features: {
             evCharging: "unknown",
             carWash: "unknown",
             covered: "unknown",
             cctv24h: "unknown",
           },
+          featureEvidence: {},
           cancellationPolicy: {
-            freeCancellationWindowHours: 24,
-            lateCancellationFeeBps: 5000,
-            isVerified: true,
+            freeCancellationWindowHours: 0,
+            lateCancellationFeeBps: 10000,
+            isVerified: false,
           },
           tariffSource: {
             id: `src-${slug}`,
-            operatorId: `op-${slug}`,
-            sourceName: `Web Oficial Verificada — ${cand.companyName}`,
+            operatorId: `cand-${slug}`,
+            sourceName: `Descubrimiento — ${cand.companyName}`,
             sourceUrl: cand.officialUrl,
             sourceType: "official_website",
             acquisitionMode: "web_extraction",
-            contentHash: sourceHash,
+            contentHash,
             retrievedAt: new Date().toISOString(),
-            verificationStatus: "verified",
-            provenanceNotes: `Inspección web autorizada. Evidencia: ${cand.evidenceSnippet}`,
-            rawPayload: { evidence: cand.evidenceSnippet },
+            verificationStatus: status,
+            provenanceNotes: cand.evidenceSnippet
+              ? `Candidato descubierto (${activeProvider.name}). Snippet: ${cand.evidenceSnippet}`
+              : `Candidato descubierto (${activeProvider.name}).`,
+            rawPayload: {
+              summary: cand.tariffSummary,
+              downloadedBytes: downloadedContent.length,
+              blockedReason,
+            },
           },
-          tariffBands: [
-            {
-              name: "Tramo Fijo 1 Día",
-              minDurationHours: 0,
-              maxDurationHours: 24,
-              priceAmount: 2200,
-              currency: "EUR",
-              pricingUnit: "flat_stay",
-              evidenceSnippet: cand.evidenceSnippet,
-            },
-            {
-              name: "Tramo Fijo 2 Días",
-              minDurationHours: 25,
-              maxDurationHours: 48,
-              priceAmount: 3800,
-              currency: "EUR",
-              pricingUnit: "flat_stay",
-              evidenceSnippet: cand.evidenceSnippet,
-            },
-          ],
-          verificationStatus: "verified",
+          tariffBands: extractedBands,
+          verificationStatus: status,
+          reviewNotes,
         });
       }
     }

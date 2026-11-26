@@ -22,6 +22,9 @@ export function filterByModality(
 ): FacilityWithServices[] {
   if (modality === "all") return facilities;
   return facilities.filter((f) => {
+    if (f.modality === "valet" || f.modality === "shuttle") {
+      return f.modality === modality;
+    }
     const isValet =
       f.name.toLowerCase().includes("valet") ||
       f.services.some(
@@ -82,16 +85,12 @@ export function filterByBudget(
 ): FacilityWithServices[] {
   if (maxBudgetCents === null || maxBudgetCents <= 0) return facilities;
   return facilities.filter((f) => {
-    // Only facilities with an authorized server quote (or positive published price) match budget
+    // Strictly use server-authorized customer_total_amount; never fallback to services.price_amount
     const quoteAmount = f.server_quote?.customer_total_amount;
-    if (quoteAmount !== undefined) {
+    if (quoteAmount !== undefined && quoteAmount !== null) {
       return quoteAmount <= maxBudgetCents;
     }
-    const serviceAmount = f.services[0]?.price_amount;
-    if (serviceAmount !== undefined && serviceAmount > 0) {
-      return serviceAmount <= maxBudgetCents;
-    }
-    return false; // Under consultation / unknown price excluded from numeric budget limit
+    return false;
   });
 }
 
@@ -105,8 +104,8 @@ export function sortFacilities(
   const cloned = [...facilities];
   if (sortBy === "price_asc") {
     cloned.sort((a, b) => {
-      const pA = a.server_quote?.customer_total_amount ?? (a.services[0]?.price_amount && a.services[0]?.price_amount > 0 ? a.services[0].price_amount : Number.MAX_SAFE_INTEGER);
-      const pB = b.server_quote?.customer_total_amount ?? (b.services[0]?.price_amount && b.services[0]?.price_amount > 0 ? b.services[0].price_amount : Number.MAX_SAFE_INTEGER);
+      const pA = a.server_quote?.customer_total_amount ?? Number.MAX_SAFE_INTEGER;
+      const pB = b.server_quote?.customer_total_amount ?? Number.MAX_SAFE_INTEGER;
       return pA - pB;
     });
   } else if (sortBy === "name_asc") {

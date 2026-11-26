@@ -37,6 +37,10 @@ try {
     & "$pgBin\psql.exe" -p $port -U postgres -d test_aerovalet -v ON_ERROR_STOP=1 -f "tests/integration/postgres_increment8.sql"
     if ($LASTEXITCODE -ne 0) { throw "postgres_increment8.sql failed" }
 
+    Write-Host "Running postgres_increment8_3.sql..."
+    & "$pgBin\psql.exe" -p $port -U postgres -d test_aerovalet -v ON_ERROR_STOP=1 -f "tests/integration/postgres_increment8_3.sql"
+    if ($LASTEXITCODE -ne 0) { throw "postgres_increment8_3.sql failed" }
+
     Write-Host "Running test_multi_session_concurrency.ps1..."
     & "powershell" -ExecutionPolicy Bypass -File "tests/integration/test_multi_session_concurrency.ps1"
     if ($LASTEXITCODE -ne 0) { throw "test_multi_session_concurrency.ps1 failed" }

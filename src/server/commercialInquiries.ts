@@ -81,25 +81,18 @@ export async function submitCommercialInquiryAction(
     const { createSupabaseServerClient } = await import("@/lib/supabase/server");
     const supabase = await createSupabaseServerClient();
 
-    const { data: record, error } = await supabase
-      .from("commercial_inquiries")
-      .upsert(
-        {
-          facility_id: data.facility_id,
-          service_id: data.service_id || null,
-          airport_id: data.airport_id || null,
-          entry_at: data.entry_at,
-          exit_at: data.exit_at,
-          contact_name: data.contact_name || null,
-          contact_email: data.contact_email || null,
-          contact_phone: data.contact_phone || null,
-          notes: data.notes || null,
-          idempotency_key: idempotencyKey,
-        },
-        { onConflict: "idempotency_key" }
-      )
-      .select("id")
-      .single();
+    const { data: inquiryId, error } = await supabase.rpc("submit_commercial_inquiry", {
+      p_facility_id: data.facility_id,
+      p_entry_at: data.entry_at,
+      p_exit_at: data.exit_at,
+      p_idempotency_key: idempotencyKey,
+      p_service_id: data.service_id || null,
+      p_airport_id: data.airport_id || null,
+      p_contact_name: data.contact_name || null,
+      p_contact_email: data.contact_email || null,
+      p_contact_phone: data.contact_phone || null,
+      p_notes: data.notes || null,
+    });
 
     if (error) {
       return {
@@ -111,7 +104,7 @@ export async function submitCommercialInquiryAction(
 
     return {
       success: true,
-      inquiryId: record.id,
+      inquiryId: String(inquiryId),
       isDemo: false,
     };
   } catch (err) {

@@ -113,10 +113,10 @@ Crawl-delay: 1
 
   describe("RFC 4180 CSV Tariff Import & Error Reporting", () => {
     const validCsv = `
-operator_name,operator_slug,airport_iata,modality,address,source_url,band_name,min_hours,max_hours,price_eur,pricing_unit,ev_charging,car_wash,covered,free_canc_hours
-Valet Barajas Test,valet-barajas-test,MAD,valet,Terminal T1-T4,https://test.es/tarifas,1 Dia,0,24,20.00,flat_stay,verified,verified,verified,24
-Valet Barajas Test,valet-barajas-test,MAD,valet,Terminal T1-T4,https://test.es/tarifas,2 Dias,25,48,35.00,flat_stay,verified,verified,verified,24
-Valet Barajas Test,valet-barajas-test,MAD,valet,Terminal T1-T4,https://test.es/tarifas,Semana,49,168,75.00,flat_stay,verified,verified,verified,24
+operator_name,operator_slug,airport_iata,modality,address,source_url,band_name,min_hours,max_hours,price_eur,pricing_unit,ev_charging,ev_charging_evidence,car_wash,car_wash_evidence,covered,free_canc_hours
+Valet Barajas Test,valet-barajas-test,MAD,valet,Terminal T1-T4,https://test.es/tarifas,1 Dia,0,24,20.00,flat_stay,verified,Cargadores Tipo 2 en planta 1,verified,Servicio de lavado manual en web oficial,verified,24
+Valet Barajas Test,valet-barajas-test,MAD,valet,Terminal T1-T4,https://test.es/tarifas,2 Dias,25,48,35.00,flat_stay,verified,Cargadores Tipo 2 en planta 1,verified,Servicio de lavado manual en web oficial,verified,24
+Valet Barajas Test,valet-barajas-test,MAD,valet,Terminal T1-T4,https://test.es/tarifas,Semana,49,168,75.00,flat_stay,verified,Cargadores Tipo 2 en planta 1,verified,Servicio de lavado manual en web oficial,verified,24
 `.trim();
 
     it("imports CSV rows into structured facility and duration bands without auto-verifying", () => {
@@ -187,6 +187,12 @@ Op Good,op-good,MAD,valet,Aeropuerto,https://op.es,1d,0,24,-10.00,flat_stay
           covered: "verified",
           cctv24h: "verified",
         },
+        featureEvidence: {
+          evCharging: "2 puntos de carga EV verificados",
+          carWash: "No dispone de servicio de lavado",
+          covered: "Plazas subterráneas cubiertas",
+          cctv24h: "Circuito cerrado CCTV 24h",
+        },
         cancellationPolicy: {
           freeCancellationWindowHours: 24,
           lateCancellationFeeBps: 5000,
@@ -210,7 +216,7 @@ Op Good,op-good,MAD,valet,Aeropuerto,https://op.es,1d,0,24,-10.00,flat_stay
       expect(rec.features.evCharging).toBe("verified");
       expect(rec.features.carWash).toBe("not_available");
       expect(rec.tariffBands[0].priceAmount).toBe(2500);
-      expect(rec.verificationStatus).toBe("verified");
+      expect(rec.verificationStatus).toBe("pending_review");
     });
 
     it("rejects invalid JSON feeds missing required fields", () => {
@@ -223,7 +229,7 @@ Op Good,op-good,MAD,valet,Aeropuerto,https://op.es,1d,0,24,-10.00,flat_stay
   });
 
   describe("End-to-End Market Ingestion Pipeline", () => {
-    it("executes discovery, deduplication, and quality control queue", async () => {
+    it("executes discovery, deduplication, and quality control queue without inventing tariffs", async () => {
       const result = await runMarketIngestionPipeline(
         TARGET_AIRPORTS.filter((a) => a.iataCode === "MAD"),
         new TestCuratedCatalogProvider()
@@ -232,20 +238,14 @@ Op Good,op-good,MAD,valet,Aeropuerto,https://op.es,1d,0,24,-10.00,flat_stay
       expect(result.airportsProcessed).toBe(1);
       expect(result.candidatesDiscovered).toBeGreaterThan(0);
 
-      // Verified operators have published tariff bands AND evidence snippets
-      const verified = result.records.filter((r) => r.verificationStatus === "verified");
-      expect(verified.length).toBeGreaterThan(0);
-      for (const v of verified) {
-        expect(v.tariffBands.length).toBeGreaterThan(0);
-        expect(v.tariffBands[0].evidenceSnippet).toBeDefined();
-        expect(v.tariffSource.contentHash).toHaveLength(64);
-      }
+      // Without real downloaded tariff tables, NO candidate may be auto-verified or have invented bands
+      expect(result.verifiedFacilitiesCount).toBe(0);
 
-      // Operators without published rates are routed to manual consultation
       const manual = result.records.filter((r) => r.verificationStatus === "pending_review");
       expect(manual.length).toBeGreaterThan(0);
       for (const m of manual) {
         expect(m.tariffBands).toHaveLength(0);
+        expect(m.tariffSource.contentHash).toHaveLength(64);
         expect(m.reviewNotes).toContain("Tarifa bajo consulta");
       }
     });

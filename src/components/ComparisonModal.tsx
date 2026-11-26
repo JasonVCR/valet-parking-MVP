@@ -89,7 +89,12 @@ export function ComparisonModal({
                 <tr>
                   <th className="th-label">Aparcamiento</th>
                   {facilities.map((f) => {
-                    const isValet = f.name.toLowerCase().includes("valet");
+                    const isValet =
+                      f.modality === "valet"
+                        ? true
+                        : f.modality === "shuttle"
+                        ? false
+                        : f.name.toLowerCase().includes("valet");
                     const img = isValet
                       ? "/images/valet_terminal_dropoff_1792282144660.jpg"
                       : "/images/covered_parking_facility_1792282144148.jpg";
@@ -129,7 +134,12 @@ export function ComparisonModal({
                 <tr>
                   <td className="td-label">Modalidad</td>
                   {facilities.map((f) => {
-                    const isValet = f.name.toLowerCase().includes("valet");
+                    const isValet =
+                      f.modality === "valet"
+                        ? true
+                        : f.modality === "shuttle"
+                        ? false
+                        : f.name.toLowerCase().includes("valet");
                     return (
                       <td key={f.id} className="td-val">
                         <span className={`pill-badge ${isValet ? "pill-blue" : "pill-emerald"}`}>

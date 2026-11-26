@@ -16,7 +16,6 @@ import type {
   CancellationPolicyRule,
 } from "@/types/domain";
 import { getCatalogFacilitiesWithQuotes } from "@/server/discovery/catalog";
-import { calculateQuote } from "@/lib/pricing/engine";
 
 function isDemoMode(): boolean {
   return (
@@ -90,6 +89,12 @@ export async function getFacilitiesWithServices(
         longitude,
         total_capacity,
         operational_buffer,
+        modality,
+        feature_ev_charging,
+        feature_car_wash,
+        feature_covered,
+        feature_cctv_24h,
+        feature_evidence,
         active,
         created_at,
         updated_at,
@@ -136,7 +141,8 @@ export async function getFacilitiesWithServices(
       supabase
         .from("service_tariff_bands")
         .select("*")
-        .eq("active", true),
+        .eq("active", true)
+        .eq("review_status", "verified"),
       supabase
         .from("service_price_rules")
         .select("*")

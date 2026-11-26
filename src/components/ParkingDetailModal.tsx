@@ -123,7 +123,12 @@ export function ParkingDetailModal({
 
   if (!facility) return null;
 
-  const isValet = facility.name.toLowerCase().includes("valet");
+  const isValet =
+    facility.modality === "valet"
+      ? true
+      : facility.modality === "shuttle"
+      ? false
+      : facility.name.toLowerCase().includes("valet");
   const gallery = [
     isValet
       ? "/images/valet_terminal_dropoff_1792282144660.jpg"

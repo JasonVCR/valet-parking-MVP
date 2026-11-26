@@ -560,14 +560,12 @@ REVOKE ALL ON FUNCTION public.calculate_service_quote(uuid, timestamptz, timesta
 GRANT EXECUTE ON FUNCTION public.calculate_service_quote(uuid, timestamptz, timestamptz, text, jsonb, integer, uuid) TO anon, authenticated, service_role;
 
 -- ═══════════════════════════════════════════════════════════════════════════════
--- PART 4: Commercial Inquiries RLS & Live Permissions
+-- PART 4: Commercial Inquiries RLS & Live Permissions (Strict Privacy)
 -- ═══════════════════════════════════════════════════════════════════════════════
 
--- Ensure anonymous and authenticated users can select the inquiry they inserted (e.g. by idempotency key)
+-- Strictly forbid anon and authenticated from reading commercial_inquiries (PII protection).
+-- Only service_role may read inquiries; clients create inquiries via INSERT or secure server RPC.
 DROP POLICY IF EXISTS "Allow select commercial inquiry by idempotency key" ON public.commercial_inquiries;
-CREATE POLICY "Allow select commercial inquiry by idempotency key"
-  ON public.commercial_inquiries FOR SELECT
-  TO anon, authenticated
-  USING (true);
-
-GRANT SELECT, INSERT ON TABLE public.commercial_inquiries TO anon, authenticated;
+REVOKE SELECT ON TABLE public.commercial_inquiries FROM anon, authenticated;
+GRANT INSERT ON TABLE public.commercial_inquiries TO anon, authenticated;
+GRANT SELECT ON TABLE public.commercial_inquiries TO service_role;

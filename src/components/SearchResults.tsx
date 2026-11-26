@@ -53,15 +53,15 @@ export function SearchResults({
   errorMessage,
 }: SearchResultsProps) {
   // Modality filter: 'all' | 'valet' | 'shuttle'
-  const [modalityFilter, setModalityFilter] = useState<"all" | "valet" | "shuttle">("all");
-  // Feature filter: 'all' | 'ev' | 'wash'
-  const [featureFilter, setFeatureFilter] = useState<"all" | "ev" | "wash">("all");
+  const [modalityFilter, setModalityFilter] = useState<ModalityFilter>("all");
+  // Feature filter: 'all' | 'ev' | 'wash' | 'covered'
+  const [featureFilter, setFeatureFilter] = useState<FeatureFilter>("all");
   // Cancellation filter: 'all' | 'free_cancellation'
-  const [cancellationFilter, setCancellationFilter] = useState<"all" | "free_cancellation">("all");
+  const [cancellationFilter, setCancellationFilter] = useState<CancellationFilter>("all");
   // Max budget in cents (null = unlimited)
   const [maxBudgetCents, setMaxBudgetCents] = useState<number | null>(null);
   // Sort option: 'price_asc' | 'name_asc'
-  const [sortBy, setSortBy] = useState<"price_asc" | "name_asc">("price_asc");
+  const [sortBy, setSortBy] = useState<SortOption>("price_asc");
 
   // Comparison state
   const [comparisonIds, setComparisonIds] = useState<string[]>([]);
@@ -369,6 +369,13 @@ export function SearchResults({
                 className={`subfilter-chip ${featureFilter === "wash" ? "active" : ""}`}
               >
                 <Sparkles size={11} /> Lavado
+              </button>
+              <button
+                type="button"
+                onClick={() => setFeatureFilter("covered")}
+                className={`subfilter-chip ${featureFilter === "covered" ? "active" : ""}`}
+              >
+                <ShieldCheck size={11} /> Cubierto
               </button>
             </div>
 

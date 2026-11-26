@@ -200,10 +200,10 @@ END $$;
 DELETE FROM public.service_price_rules WHERE id IN ('88888888-8888-4888-a888-888888888886', '88888888-8888-4888-a888-888888888887');
 
 -- TEST 7: Verified tariff band vs unverified tariff band
-INSERT INTO public.service_tariff_bands (id, service_id, source_id, name, min_duration_hours, max_duration_hours, price_amount, currency, pricing_unit, active)
+INSERT INTO public.service_tariff_bands (id, service_id, source_id, name, min_duration_hours, max_duration_hours, price_amount, currency, pricing_unit, active, review_status)
 VALUES 
-  ('99999999-9999-4999-a999-999999999991', '55555555-5555-4555-a555-555555555555', '77777777-7777-4777-a777-777777777772', 'Banda No Verificada', 25, 48, 1000, 'EUR', 'flat_stay', true),
-  ('99999999-9999-4999-a999-999999999992', '55555555-5555-4555-a555-555555555555', '77777777-7777-4777-a777-777777777771', 'Banda Oficial Verificada', 25, 48, 3500, 'EUR', 'flat_stay', true);
+  ('99999999-9999-4999-a999-999999999991', '55555555-5555-4555-a555-555555555555', '77777777-7777-4777-a777-777777777772', 'Banda No Verificada', 25, 48, 1000, 'EUR', 'flat_stay', true, 'pending_review'),
+  ('99999999-9999-4999-a999-999999999992', '55555555-5555-4555-a555-555555555555', '77777777-7777-4777-a777-777777777771', 'Banda Oficial Verificada', 25, 48, 3500, 'EUR', 'flat_stay', true, 'verified');
 
 DO $$
 DECLARE
@@ -335,8 +335,8 @@ BEGIN
   -- 1. Calculate authoritative quote
   v_quote := public.calculate_service_quote(
     '55555555-5555-4555-a555-555555555555',
-    '2026-11-26T10:00:00Z',
-    '2026-11-29T10:00:00Z', -- 3 days = 6000 base + 999 = 6999
+    '2027-01-10T10:00:00Z',
+    '2027-01-13T10:00:00Z', -- 3 days = 6000 base + 999 = 6999
     'suv',
     jsonb_build_array(jsonb_build_object('extra_id', '66666666-6666-4666-a666-666666666666', 'quantity', 1))
   );
@@ -345,8 +345,8 @@ BEGIN
   v_hold := public.create_booking_hold(
     p_facility_id => '44444444-4444-4444-a444-444444444444',
     p_service_id => '55555555-5555-4555-a555-555555555555',
-    p_entry_at => '2026-11-26T10:00:00Z',
-    p_exit_at => '2026-11-29T10:00:00Z',
+    p_entry_at => '2027-01-10T10:00:00Z',
+    p_exit_at => '2027-01-13T10:00:00Z',
     p_vehicle_id => null,
     p_customer_id => null,
     p_guest_email => 'guest.tester@aerovalet.demo',

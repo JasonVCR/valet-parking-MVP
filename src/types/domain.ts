@@ -84,6 +84,7 @@ export interface Facility {
   longitude: number | null;
   total_capacity: number;
   operational_buffer: number;
+  modality?: "valet" | "shuttle" | null;
   feature_ev_charging?: FeatureVerificationStatus;
   feature_car_wash?: FeatureVerificationStatus;
   feature_covered?: FeatureVerificationStatus;
